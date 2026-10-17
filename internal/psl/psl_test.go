@@ -65,14 +65,14 @@ func TestParseSample(t *testing.T) {
 	}
 	m := l.ICANN()
 	cases := map[string]string{
-		"foo1.bar.edu.pl":       "bar.edu.pl",
-		"x.foo3.bar.edu.pl":     "bar.edu.pl",
-		"baz.pl":                "baz.pl",
-		"app.city.kawasaki.jp":  "city.kawasaki.jp",
-		"a.b.foo.kawasaki.jp":   "b.foo.kawasaki.jp",
-		"www.ck":                "www.ck",
-		"a.b.ck":                "a.b.ck",
-		"something.unknowntld":  "something.unknowntld",
+		"foo1.bar.edu.pl":      "bar.edu.pl",
+		"x.foo3.bar.edu.pl":    "bar.edu.pl",
+		"baz.pl":               "baz.pl",
+		"app.city.kawasaki.jp": "city.kawasaki.jp",
+		"a.b.foo.kawasaki.jp":  "b.foo.kawasaki.jp",
+		"www.ck":               "www.ck",
+		"a.b.ck":               "a.b.ck",
+		"something.unknowntld": "something.unknowntld",
 	}
 	for in, want := range cases {
 		if got, _ := m.Registrable(in); got != want {
