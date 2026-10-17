@@ -22,6 +22,8 @@ const (
 	DNSAppeared = "appeared" // had no NS for >= grace days, now has NS
 )
 
+const appearedMinNegDays = 2
+
 // NSState is the persisted per-target DNS state.
 type NSState struct {
 	Baseline   []string  // last accepted NS set ("known good")
@@ -79,8 +81,9 @@ func Apply(s *NSState, o Observation, grace int) *Event {
 		s.MissingDays, s.MissingSince = 0, time.Time{}
 		switch {
 		case len(s.Baseline) == 0:
-			// first sighting, or delegation (re)appeared after a long absence
-			if s.NegDays >= grace {
+			// first sighting, or a delegation appearing after the name was
+			// observed undelegated on several distinct days
+			if s.NegDays >= appearedMinNegDays {
 				s.State = DNSAppeared
 			} else if s.State != DNSAppeared {
 				s.State = DNSOK
