@@ -208,6 +208,8 @@ func Open(path string) (*Store, error) {
 	if _, err := w.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	w.Exec(`DELETE FROM events WHERE type='dns_state' AND from_val='unknown'`)
+	w.Exec(`DELETE FROM events WHERE type IN ('rdap_created_changed','rdap_expiry_changed') AND from_val=to_val`)
 	// data fix: creation dates differing only in sub-day precision are not re-registrations
 	w.Exec(`UPDATE targets SET rdap_prev_created=0 WHERE rdap_prev_created>0 AND date(rdap_prev_created,'unixepoch')=date(rdap_created,'unixepoch')`)
 	return s, nil
@@ -463,13 +465,14 @@ func (s *Store) AddEvent(runID, targetID int64, typ, from, to, detail string) {
 }
 
 type EventFilter struct {
-	Q        string
-	Type     string
-	Section  string
-	TargetID int64
-	Since    time.Time
-	Limit    int
-	Offset   int
+	Q            string
+	Type         string
+	ExcludeTypes []string
+	Section      string
+	TargetID     int64
+	Since        time.Time
+	Limit        int
+	Offset       int
 }
 
 func (s *Store) ListEvents(f EventFilter) ([]Event, int) {
@@ -477,6 +480,9 @@ func (s *Store) ListEvents(f EventFilter) ([]Event, int) {
 	var args []any
 	if f.Type != "" {
 		where, args = append(where, "e.type=?"), append(args, f.Type)
+	}
+	for _, x := range f.ExcludeTypes {
+		where, args = append(where, "e.type<>?"), append(args, x)
 	}
 	if f.Section != "" {
 		where, args = append(where, "t.section=?"), append(args, f.Section)

@@ -49,7 +49,7 @@ func Build(st *store.Store, baseURL string, since time.Time) (string, []mailer.A
 	fmt.Fprintf(&body, "Private rules without required _psl TXT: %d\n", total)
 	fmt.Fprintf(&body, "Expiring within 90 days / recently expired: %d\n", len(exp))
 	// events this week
-	evs, evTotal := st.ListEvents(store.EventFilter{Since: since, Limit: 5000})
+	evs, evTotal := st.ListEvents(store.EventFilter{Since: since, Limit: 5000, ExcludeTypes: []string{"acked"}})
 	atts = append(atts, mailer.Attachment{Name: fmt.Sprintf("events-%s.txt", now.Format("20060102")), Data: renderEvents(evs)})
 	fmt.Fprintf(&body, "State-change events since %s: %d\n\n", since.Format("2006-01-02"), evTotal)
 	if baseURL != "" {

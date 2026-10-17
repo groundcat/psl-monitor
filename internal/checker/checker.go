@@ -582,7 +582,8 @@ func (r *run) dnsPhase(ctx context.Context, ts []*store.Target, autoRDAP bool) e
 			if err := store.SaveFlagsTx(tx, &tt); err != nil {
 				return err
 			}
-			if ev != nil {
+			// skip the initial classification (unknown -> ok/no_ns): it is not a change
+			if ev != nil && ev.From != analyze.DNSUnknown {
 				r.c.Store.AddEventTx(tx, r.id, tt.ID, "dns_state", ev.From, ev.To, ev.Detail)
 			}
 			return r.recordResult(tx, &tt)
