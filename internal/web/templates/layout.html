@@ -11,7 +11,7 @@
 <header>
   <a class="brand" href="/">PSL Monitor</a>
   <a href="/" class="{{if eq .Nav "dash"}}on{{end}}">Dashboard</a>
-  <a href="/targets?flagged=1&unacked=1" class="{{if eq .Nav "flagged"}}on{{end}}">Flagged</a>
+  <a href="/targets?minsev=3&unacked=1" class="{{if eq .Nav "flagged"}}on{{end}}">Flagged</a>
   <a href="/targets?section=private" class="{{if eq .Nav "private"}}on{{end}}">Private</a>
   <a href="/targets?section=icann" class="{{if eq .Nav "icann"}}on{{end}}">ICANN</a>
   <a href="/search" class="{{if eq .Nav "search"}}on{{end}}">Search</a>

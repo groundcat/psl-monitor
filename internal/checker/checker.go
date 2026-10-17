@@ -707,11 +707,13 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 	prev := t.RDAP
 	switch d.Result {
 	case rdap.ResultFound:
-		if !d.Created.IsZero() && !prev.Created.IsZero() && !d.Created.Equal(prev.Created) {
+		// compare by day: registries/mirrors differ in sub-day precision, while a
+		// genuine re-registration always moves the creation date
+		if !d.Created.IsZero() && !prev.Created.IsZero() && !sameDay(d.Created, prev.Created) {
 			t.RDAP.PrevCreated = prev.Created
 			evs = append(evs, [4]string{"rdap_created_changed", prev.Created.Format("2006-01-02"), d.Created.Format("2006-01-02"), ""})
 		}
-		if !d.Expires.IsZero() && !prev.Expires.IsZero() && !d.Expires.Equal(prev.Expires) {
+		if !d.Expires.IsZero() && !prev.Expires.IsZero() && !sameDay(d.Expires, prev.Expires) {
 			evs = append(evs, [4]string{"rdap_expiry_changed", prev.Expires.Format("2006-01-02"), d.Expires.Format("2006-01-02"), ""})
 		}
 		if prev.Result == rdap.ResultNotFound {
@@ -757,6 +759,10 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 		}
 	}
 	return evs
+}
+
+func sameDay(a, b time.Time) bool {
+	return a.UTC().Format("2006-01-02") == b.UTC().Format("2006-01-02")
 }
 
 func groupByServer(ts []*store.Target, c *rdap.Client) [][]*store.Target {

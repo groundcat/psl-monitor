@@ -536,7 +536,7 @@ func parseTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	for _, f := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04:05Z0700", "2006-01-02"} {
 		if t, err := time.Parse(f, s); err == nil {
-			return t.UTC()
+			return t.UTC().Truncate(time.Second) // stored with second precision
 		}
 	}
 	return time.Time{}

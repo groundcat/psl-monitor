@@ -149,7 +149,8 @@ func Evaluate(in Input) []Flag {
 			add(FlagRDAPVanished, SevCritical, ConfConfirmed, "RDAP record existed previously and is now gone")
 		}
 	}
-	if r.Result == "found" && !r.PrevCreated.IsZero() && !r.Created.IsZero() && !r.PrevCreated.Equal(r.Created) {
+	if r.Result == "found" && !r.PrevCreated.IsZero() && !r.Created.IsZero() &&
+		r.PrevCreated.UTC().Format("2006-01-02") != r.Created.UTC().Format("2006-01-02") {
 		add(FlagReRegistered, SevCritical, ConfHigh, "creation date changed %s -> %s", r.PrevCreated.Format("2006-01-02"), r.Created.Format("2006-01-02"))
 	}
 	for _, st := range r.Statuses {

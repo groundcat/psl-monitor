@@ -208,6 +208,8 @@ func Open(path string) (*Store, error) {
 	if _, err := w.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	// data fix: creation dates differing only in sub-day precision are not re-registrations
+	w.Exec(`UPDATE targets SET rdap_prev_created=0 WHERE rdap_prev_created>0 AND date(rdap_prev_created,'unixepoch')=date(rdap_created,'unixepoch')`)
 	return s, nil
 }
 

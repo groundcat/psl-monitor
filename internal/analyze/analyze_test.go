@@ -240,3 +240,15 @@ func TestParkingOwnName(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestReRegisteredIgnoresSubDay(t *testing.T) {
+	c := time.Date(1996, 10, 11, 4, 0, 0, 166e6, time.UTC)
+	f := Evaluate(Input{Section: "private", DNS: NSState{State: DNSOK}, RDAP: RDAPInfo{Result: "found", Created: c, PrevCreated: c.Truncate(time.Second), Expires: day(2000)}, Now: day(0)})
+	if len(f) != 0 {
+		t.Fatalf("%+v", f)
+	}
+	f = Evaluate(Input{Section: "private", DNS: NSState{State: DNSOK}, RDAP: RDAPInfo{Result: "found", Created: day(-30), PrevCreated: c, Expires: day(2000)}, Now: day(0)})
+	if f[0].Type != FlagReRegistered {
+		t.Fatalf("%+v", f)
+	}
+}

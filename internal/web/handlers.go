@@ -112,7 +112,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	case "icann":
 		nav = "icann"
 	}
-	if r.URL.Query().Get("flagged") == "1" && r.URL.Query().Get("section") == "" {
+	if (r.URL.Query().Get("flagged") == "1" || r.URL.Query().Get("minsev") != "") && r.URL.Query().Get("section") == "" {
 		nav = "flagged"
 	}
 	s.listTargets(w, r, "targets", nav, "Targets", false)
