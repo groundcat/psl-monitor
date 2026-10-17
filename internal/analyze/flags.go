@@ -245,8 +245,28 @@ func Evaluate(in Input) []Flag {
 	if d.Inconsistent && d.State == DNSOK {
 		add(FlagInconsistent, SevInfo, ConfLow, "resolvers disagreed on last check")
 	}
+	f = mergeFlags(f)
 	sort.SliceStable(f, func(i, j int) bool { return f[i].Severity > f[j].Severity })
 	return f
+}
+
+// mergeFlags collapses flags of the same type (e.g. two matching RDAP
+// statuses), keeping the highest severity and joining messages.
+func mergeFlags(f []Flag) []Flag {
+	idx := map[string]int{}
+	var out []Flag
+	for _, x := range f {
+		if i, ok := idx[x.Type]; ok {
+			if x.Severity > out[i].Severity {
+				out[i].Severity, out[i].Confidence = x.Severity, x.Confidence
+			}
+			out[i].Msg += "; " + x.Msg
+			continue
+		}
+		idx[x.Type] = len(out)
+		out = append(out, x)
+	}
+	return out
 }
 
 // MaxSeverity of a flag set.

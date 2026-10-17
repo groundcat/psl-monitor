@@ -267,3 +267,10 @@ func TestICANNPlaceholders(t *testing.T) {
 		t.Fatalf("%+v", f)
 	}
 }
+
+func TestMergeDuplicateFlags(t *testing.T) {
+	f := Evaluate(Input{Section: "private", DNS: NSState{State: DNSOK}, RDAP: RDAPInfo{Result: "found", Statuses: []string{"pending delete", "redemption period"}, Expires: day(2000)}, Now: day(0)})
+	if len(f) != 1 || f[0].Type != FlagPendingDelete {
+		t.Fatalf("%+v", f)
+	}
+}
