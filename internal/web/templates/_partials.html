@@ -1,0 +1,81 @@
+{{define "targettable"}}
+{{if .Items}}
+<table>
+  <tr>
+    {{if .Select}}<th><input type="checkbox" data-select-all title="select all"></th>{{end}}
+    <th>{{if .Sort}}<a href="{{call .Sort "severity"}}">sev</a>{{else}}sev{{end}}</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "section"}}">section</a>{{else}}section{{end}}</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "name"}}">name</a>{{else}}name{{end}}</th>
+    <th>flags</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "dns"}}">dns</a>{{else}}dns{{end}}</th>
+    <th>NS (current)</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "created"}}">created</a>{{else}}created{{end}}</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "expires"}}">expires</a>{{else}}expires{{end}}</th>
+    <th>rdap</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "rules"}}">rules</a>{{else}}rules{{end}}</th>
+    <th>{{if .Sort}}<a href="{{call .Sort "checked"}}">checked</a>{{else}}checked{{end}}</th>
+    <th>ack</th>
+  </tr>
+  {{range .Items}}
+  <tr class="{{sevRow .Severity}}">
+    {{if $.Select}}<td><input type="checkbox" name="id" value="{{.ID}}" form="bulk"></td>{{end}}
+    <td>{{template "sevtag" .Severity}}</td>
+    <td>{{.Section}}</td>
+    <td class="wrap"><a href="/target/{{.ID}}">{{.Name}}</a>{{if ne .Name .UName}} <span class="muted">({{.UName}})</span>{{end}}{{if not .Active}} <span class="tag">removed</span>{{end}}{{if .Entity}}<div class="muted small">{{.Entity}}</div>{{end}}</td>
+    <td>{{range .Flags}}{{if ge .Severity 1}}<span class="tag" title="{{.Msg}} [{{.Confidence}}]">{{.Type}}</span>{{end}}{{end}}</td>
+    <td class="nowrap"><span class="st st-{{.DNS.State}}">{{.DNS.State}}</span>{{if and .DNS.LastStatus (ne .DNS.LastStatus "ok")}}<div class="muted small">{{.DNS.LastStatus}}{{if .DNS.MissingDays}} {{.DNS.MissingDays}}d{{end}}{{if .DNS.ChangedDays}} {{.DNS.ChangedDays}}d{{end}}</div>{{end}}</td>
+    <td class="small wrap">{{join .DNS.Current " "}}{{if .ParkedNS}} <span class="tag">parked</span>{{end}}</td>
+    <td class="nowrap">{{date .RDAP.Created}}</td>
+    <td class="nowrap">{{date .RDAP.Expires}}{{if not (isZero .RDAP.Expires)}}<div class="muted small">{{days .RDAP.Expires}}d</div>{{end}}</td>
+    <td><span class="st st-{{.RDAP.Result}}">{{or .RDAP.Result "—"}}</span></td>
+    <td class="num">{{.RuleCount}}{{if .TXTMissing}}<div class="small st-missing" title="rules missing _psl TXT">txt-{{.TXTMissing}}</div>{{end}}</td>
+    <td class="nowrap small">{{ago .DNSCheckedAt}}</td>
+    <td class="small">{{if not (isZero .AckedAt)}}{{.AckedBy}}{{if .AckedAt.Before .FlaggedSince}} <span class="st-missing">(stale)</span>{{end}}{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+{{else}}
+<p class="muted">No targets.</p>
+{{end}}
+{{end}}
+
+{{define "eventtable"}}
+{{if .}}
+<table class="compact">
+  <tr><th>time (UTC)</th><th>type</th><th>target</th><th>from</th><th>to</th><th>detail</th><th>run</th></tr>
+  {{range .}}
+  <tr>
+    <td class="nowrap">{{datetime .TS}}</td>
+    <td>{{.Type}}</td>
+    <td class="wrap">{{if .TargetID}}<a href="/target/{{.TargetID}}">{{.Name}}</a> <span class="muted">{{.Section}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+    <td><span class="st st-{{.From}}">{{.From}}</span></td>
+    <td><span class="st st-{{.To}}">{{.To}}</span></td>
+    <td class="small wrap">{{.Detail}}</td>
+    <td>{{if .RunID}}<a href="/run/{{.RunID}}">#{{.RunID}}</a>{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+{{else}}<p class="muted">No events.</p>{{end}}
+{{end}}
+
+{{define "runtable"}}
+{{if .}}
+<table class="compact">
+  <tr><th>#</th><th>kind</th><th>scope</th><th>trigger</th><th>status</th><th>started (UTC)</th><th>duration</th><th class="num">done/total</th><th class="num">errors</th><th>summary</th></tr>
+  {{range .}}
+  <tr>
+    <td><a href="/run/{{.ID}}">#{{.ID}}</a></td>
+    <td>{{kindLabel .Kind}}</td>
+    <td>{{.Scope}}</td>
+    <td>{{.Trigger}}{{if .TriggeredBy}} <span class="muted">({{.TriggeredBy}})</span>{{end}}</td>
+    <td><span class="st st-{{.Status}}">{{.Status}}</span></td>
+    <td class="nowrap">{{datetime .StartedAt}}</td>
+    <td class="nowrap">{{.Duration}}</td>
+    <td class="num">{{.Done}}/{{.Total}}</td>
+    <td class="num">{{.Errors}}</td>
+    <td class="small wrap">{{.Summary}}</td>
+  </tr>
+  {{end}}
+</table>
+{{else}}<p class="muted">No runs yet.</p>{{end}}
+{{end}}

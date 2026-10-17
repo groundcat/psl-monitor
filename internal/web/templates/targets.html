@@ -1,0 +1,73 @@
+{{define "content"}}
+{{$d := .Data}}{{$f := $d.Filter}}
+<h1>{{if $d.Advanced}}Advanced search{{else}}Targets{{if $f.Section}} — {{$f.Section}}{{end}}{{end}} <span class="muted small">{{$d.Total}} results</span></h1>
+
+<form class="filters" method="get" action="{{if $d.Advanced}}/search{{else}}/targets{{end}}">
+  <label>search <input type="search" name="q" value="{{$f.Q}}" placeholder="name / entity / note; =exact, *.suffix" size="28"></label>
+  <label>section <select name="section"><option value="">all</option><option value="private" {{if eq $f.Section "private"}}selected{{end}}>private</option><option value="icann" {{if eq $f.Section "icann"}}selected{{end}}>icann</option></select></label>
+  <label>min severity <select name="minsev"><option value="">any</option>{{range $i, $n := (seq 6)}}{{if $n}}<option value="{{$n}}" {{if eq $f.MinSev $n}}selected{{end}}>{{sev $n}}+</option>{{end}}{{end}}</select></label>
+  <label>flag <select name="flag"><option value="">any</option>{{range $d.FlagTypes}}<option {{if eq $f.Flag .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>dns state <select name="dns"><option value="">any</option>{{range $d.DNSStates}}<option {{if eq $f.DNSState .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>rdap <select name="rdap"><option value="">any</option>{{range $d.RDAPRes}}<option {{if eq $f.RDAP .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>flagged <select name="flagged"><option value="">all</option><option value="1" {{if $f.OnlyFlagged}}selected{{end}}>flagged only (≥low)</option></select></label>
+  <label>ack <select name="unacked"><option value="">all</option><option value="1" {{if $f.Unacked}}selected{{end}}>unacknowledged</option></select></label>
+  {{if $d.Advanced}}
+  <label>TLD <select name="tld"><option value="">any</option>{{range $d.TLDs}}<option {{if eq $f.TLD .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>parent suffix <input type="text" name="suffix" value="{{$f.Suffix}}" placeholder="e.g. edu.pl" size="12"></label>
+  <label>entity (exact) <input type="text" name="entity" value="{{$f.Entity}}" size="16"></label>
+  <label>NS contains <input type="text" name="ns" value="{{$f.NS}}" placeholder="e.g. cloudflare" size="14"></label>
+  <label>last dns status <select name="dnsstatus"><option value="">any</option>{{range (split ",ok,nxdomain,nodata,servfail,timeout,error,")}}{{if .}}<option {{if eq $f.DNSStatus .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
+  <label>_psl TXT <select name="txt"><option value="">any</option><option value="missing" {{if eq $f.TXT "missing"}}selected{{end}}>has non-compliant rules</option><option value="ok" {{if eq $f.TXT "ok"}}selected{{end}}>compliant/exempt</option></select></label>
+  <label>parked NS <select name="parked"><option value="">any</option><option value="1" {{if $f.Parked}}selected{{end}}>yes</option></select></label>
+  <fieldset><legend>RDAP expiry</legend>
+    <label>after <input type="date" name="exp_after" value="{{$.Q.Get "exp_after"}}"></label>
+    <label>before <input type="date" name="exp_before" value="{{$.Q.Get "exp_before"}}"></label>
+    <label>within days <input type="number" name="exp_within" value="{{$.Q.Get "exp_within"}}" min="1" style="width:6em"></label>
+  </fieldset>
+  <fieldset><legend>RDAP creation</legend>
+    <label>after <input type="date" name="created_after" value="{{$.Q.Get "created_after"}}"></label>
+    <label>before <input type="date" name="created_before" value="{{$.Q.Get "created_before"}}"></label>
+    <label>within days <input type="number" name="created_within" value="{{$.Q.Get "created_within"}}" min="1" style="width:6em"></label>
+  </fieldset>
+  <label>removed <select name="inactive"><option value="">active only</option><option value="1" {{if $f.Inactive}}selected{{end}}>include removed</option></select></label>
+  {{end}}
+  <label>per page <select name="per">{{range (split ",50,100,250,500,1000,")}}{{if .}}<option {{if eq (printf "%d" $d.PerPage) .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
+  <input type="hidden" name="sort" value="{{$f.Sort}}">{{if $f.Desc}}<input type="hidden" name="desc" value="1">{{end}}
+  <button class="primary" type="submit">apply</button>
+  <a class="btn" href="{{if $d.Advanced}}/search{{else}}/targets{{if $f.Section}}?section={{$f.Section}}{{end}}{{end}}">reset</a>
+  {{if not $d.Advanced}}<a href="/search{{query $.Q}}">advanced…</a>{{end}}
+</form>
+
+<div class="actions">
+  <span class="muted">export:</span>
+  <a class="btn" href="/targets.txt?{{$d.Export}}">txt</a>
+  <a class="btn" href="/targets.csv?{{$d.Export}}">csv</a>
+  <span class="muted">| quick:</span>
+  <a href="/targets?section={{$f.Section}}&minsev=5">critical</a>
+  <a href="/targets?section={{$f.Section}}&flag=defunct">defunct</a>
+  <a href="/targets?section={{$f.Section}}&flag=ns_changed">ns changed</a>
+  <a href="/targets?section={{$f.Section}}&flag=parked">parked</a>
+  <a href="/targets?section={{$f.Section}}&flag=expired">expired</a>
+  <a href="/targets?section={{$f.Section}}&exp_within=90&sort=expires">expiring ≤90d</a>
+  <a href="/targets?section={{$f.Section}}&created_within=365&sort=created&desc=1">new reg ≤1y</a>
+  <span class="legend small" style="margin-left:auto">{{template "sevtag" 5}}{{template "sevtag" 4}}{{template "sevtag" 3}}{{template "sevtag" 2}}{{template "sevtag" 1}}</span>
+</div>
+
+<form id="bulk" method="post" action="/targets/bulk" class="actions" data-confirm="Apply bulk action to the selected targets?">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="back" value="{{if $d.Advanced}}/search{{else}}/targets{{end}}{{query $.Q}}">
+  <span class="muted">selected:</span>
+  <select name="action">
+    <option value="ack">acknowledge</option>
+    <option value="accept_ns">accept current NS as baseline + ack</option>
+    <option value="recheck">re-check DNS now</option>
+    <option value="recheck_full">re-check DNS + RDAP + TXT now</option>
+  </select>
+  <input type="text" name="note" placeholder="note (optional)" size="30">
+  <button type="submit">apply</button>
+</form>
+
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{template "targettable" (dict_targets $d.Items $.CSRF true $.Q)}}
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{end}}

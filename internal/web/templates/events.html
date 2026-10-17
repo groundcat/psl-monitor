@@ -1,0 +1,15 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Events <span class="muted small">{{$d.Total}}</span></h1>
+<p class="muted">State transitions recorded by checks: DNS state changes, RDAP result/creation/expiry changes, _psl TXT status changes, PSL rule additions/removals, acknowledgements.</p>
+<form class="filters" method="get" action="/events">
+  <label>search <input type="search" name="q" value="{{$d.Filter.Q}}" placeholder="target / detail" size="28"></label>
+  <label>type <select name="type"><option value="">any</option>{{range $d.Types}}<option {{if eq $d.Filter.Type .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>section <select name="section"><option value="">any</option><option value="private" {{if eq $d.Filter.Section "private"}}selected{{end}}>private</option><option value="icann" {{if eq $d.Filter.Section "icann"}}selected{{end}}>icann</option></select></label>
+  <label>last N days <input type="number" name="days" value="{{$.Q.Get "days"}}" min="1" style="width:6em"></label>
+  <button class="primary">apply</button> <a class="btn" href="/events">reset</a>
+</form>
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{template "eventtable" $d.Items}}
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{end}}

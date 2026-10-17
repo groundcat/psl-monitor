@@ -1,0 +1,16 @@
+{{define "content"}}
+<h1>PSL snapshots</h1>
+<p class="muted">A snapshot is stored whenever a sync downloads PSL content that differs (by SHA-256) from the previous one. Version and commit come from the <code>// VERSION:</code> and <code>// COMMIT:</code> header lines.</p>
+<table class="compact">
+  <tr><th>#</th><th>version</th><th>commit</th><th>fetched (UTC)</th><th class="num">rules icann</th><th class="num">rules private</th><th class="num">targets icann</th><th class="num">targets private</th><th class="num">added</th><th class="num">removed</th></tr>
+  {{range .Data}}
+  <tr>
+    <td><a href="/snapshot/{{.ID}}">#{{.ID}}</a></td><td>{{.Version}}</td>
+    <td><a href="https://github.com/publicsuffix/list/commit/{{.Commit}}" rel="noopener noreferrer" target="_blank">{{.Commit}}</a></td>
+    <td class="nowrap">{{datetime .FetchedAt}}</td>
+    <td class="num">{{.RulesICANN}}</td><td class="num">{{.RulesPrivate}}</td><td class="num">{{.TargetsICANN}}</td><td class="num">{{.TargetsPrivate}}</td>
+    <td class="num">{{len .Added}}</td><td class="num">{{len .Removed}}</td>
+  </tr>
+  {{else}}<tr><td colspan="10" class="muted">No snapshots yet.</td></tr>{{end}}
+</table>
+{{end}}

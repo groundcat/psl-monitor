@@ -1,0 +1,20 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Diff: run <a href="/run/{{$d.A.ID}}">#{{$d.A.ID}}</a> ({{datetime $d.A.StartedAt}}) → <a href="/run/{{$d.B.ID}}">#{{$d.B.ID}}</a> ({{datetime $d.B.StartedAt}})</h1>
+<p class="muted">{{$d.Total}} targets changed (DNS state, NS set, RDAP result/dates, flags or TXT). Targets only checked in one run are included. {{if gt $d.Total (len $d.Items)}}Showing first {{len $d.Items}}.{{end}}</p>
+<table class="compact">
+  <tr><th>target</th><th>sev</th><th>dns state</th><th>NS</th><th>rdap</th><th>expires</th><th>created</th><th>flags</th></tr>
+  {{range $d.Items}}
+  <tr class="{{sevRow .B.Severity}}">
+    <td class="wrap"><a href="/target/{{.TargetID}}">{{.Name}}</a> <span class="muted">{{.Section}}</span></td>
+    <td class="nowrap">{{if .HasA}}{{template "sevtag" .A.Severity}}{{else}}—{{end}} → {{if .HasB}}{{template "sevtag" .B.Severity}}{{else}}—{{end}}</td>
+    <td class="nowrap">{{if ne .A.DNSState .B.DNSState}}<span class="st st-{{.A.DNSState}}">{{or .A.DNSState "—"}}</span> → <span class="st st-{{.B.DNSState}}">{{or .B.DNSState "—"}}</span>{{else}}<span class="muted">{{.B.DNSState}}</span>{{end}}</td>
+    <td class="small wrap">{{if ne .A.NS .B.NS}}<del>{{.A.NS}}</del><br><ins>{{.B.NS}}</ins>{{else}}<span class="muted">=</span>{{end}}</td>
+    <td>{{if ne .A.RDAPResult .B.RDAPResult}}{{or .A.RDAPResult "—"}} → {{or .B.RDAPResult "—"}}{{else}}<span class="muted">{{.B.RDAPResult}}</span>{{end}}</td>
+    <td class="nowrap">{{if ne (date .A.RDAPExpires) (date .B.RDAPExpires)}}{{date .A.RDAPExpires}} → {{date .B.RDAPExpires}}{{else}}<span class="muted">{{date .B.RDAPExpires}}</span>{{end}}</td>
+    <td class="nowrap">{{if ne (date .A.RDAPCreated) (date .B.RDAPCreated)}}{{date .A.RDAPCreated}} → {{date .B.RDAPCreated}}{{else}}<span class="muted">{{date .B.RDAPCreated}}</span>{{end}}</td>
+    <td class="small">{{if ne .A.FlagTypes .B.FlagTypes}}<del>{{trimc .A.FlagTypes}}</del> <ins>{{trimc .B.FlagTypes}}</ins>{{else}}<span class="muted">{{trimc .B.FlagTypes}}</span>{{end}}</td>
+  </tr>
+  {{else}}<tr><td colspan="8" class="muted">No differences.</td></tr>{{end}}
+</table>
+{{end}}

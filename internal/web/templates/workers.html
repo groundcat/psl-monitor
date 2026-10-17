@@ -1,0 +1,70 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Workers</h1>
+
+<h2>Active runs</h2>
+<table class="compact" data-live-runs="{{if $d.Running}}1{{else}}0{{end}}">
+  <tr><th>run</th><th>kind</th><th>phase</th><th>progress</th><th class="num">errors</th><th>started</th><th></th></tr>
+  {{range $d.Running}}
+  <tr data-run="{{.RunID}}">
+    <td><a href="/run/{{.RunID}}">#{{.RunID}}</a></td><td>{{kindLabel .Kind}}{{if .Scope}} ({{.Scope}}){{end}}</td>
+    <td data-f="phase">{{.Phase}}</td>
+    <td><progress max="{{.Total}}" value="{{.Done}}"></progress> <span data-f="count">{{.Done}}/{{.Total}} ({{pct .Done .Total}}%)</span></td>
+    <td class="num" data-f="errors">{{.Errors}}</td>
+    <td>{{ago .StartedAt}}</td>
+    <td><form method="post" action="/run/{{.RunID}}/cancel" class="inline" data-confirm="Cancel run #{{.RunID}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="back" value="/workers"><button class="danger">cancel</button></form></td>
+  </tr>
+  {{else}}<tr><td colspan="7" class="muted">idle</td></tr>{{end}}
+</table>
+
+<h2>Start a run</h2>
+<table class="compact">
+  <tr><th>job</th><th>what it does</th><th>last run</th><th></th></tr>
+  {{template "startrow" (dict_start $.CSRF "dns_private" "" "Daily NS check of private-section registrable domains (ICANN suffix + 1). Auto-confirms anomalies via RDAP." (index $d.LastRuns "dns_private"))}}
+  {{template "startrow" (dict_start $.CSRF "dns_icann" "" "NS check of every ICANN-section suffix (detects dropped / re-delegated suffixes)." (index $d.LastRuns "dns_icann"))}}
+  {{template "startrow" (dict_start $.CSRF "txt" "" "Query _psl TXT for every private rule; flag non-exempt rules without one." (index $d.LastRuns "txt"))}}
+  {{template "startrow" (dict_start $.CSRF "rdap" "private" "Full RDAP lookup of all private registrable domains (creation/expiry cache)." (index $d.LastRuns "rdap"))}}
+  {{template "startrow" (dict_start $.CSRF "rdap" "icann" "Full RDAP lookup of all ICANN suffixes (TLDs via IANA; 2nd-level via registry)." (index $d.LastRuns "rdap"))}}
+  {{template "startrow" (dict_start $.CSRF "rdap" "all" "Full RDAP lookup of both sections." (index $d.LastRuns "rdap"))}}
+  {{template "startrow" (dict_start $.CSRF "sync" "" "Download PSL and record a snapshot/diff if it changed. No lookups." (index $d.LastRuns "sync"))}}
+  <tr><td>Email report</td><td>Build the flagged-domains report and email it.</td>
+    <td>{{with (index $d.LastRuns "report")}}{{if .ID}}<a href="/run/{{.ID}}" class="st st-{{.Status}}">{{.Status}}</a> {{ago .StartedAt}}{{end}}{{end}}</td>
+    <td class="nowrap">
+      <form method="post" action="/report/send" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="self" value="1"><button>send to me</button></form>
+      <form method="post" action="/report/send" class="inline" data-confirm="Send the report to all opted-in admins?"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>send to all</button></form>
+      <a class="btn" href="/report/preview" target="_blank">preview</a>
+    </td></tr>
+</table>
+
+<h2>Schedule</h2>
+<table class="compact">
+  <tr><th>job</th><th>enabled</th><th>interval</th><th>at (UTC)</th><th>last</th><th>next</th></tr>
+  {{range $d.Jobs}}
+  <tr><td>{{.Label}}</td><td>{{if .Enabled}}yes{{else}}<span class="muted">no</span>{{end}}</td><td>{{interval .Interval}}</td><td>{{or .At "—"}}</td>
+    <td>{{if .HasLast}}<a href="/run/{{.LastRun.ID}}" class="st st-{{.LastRun.Status}}">{{.LastRun.Status}}</a> {{ago .LastRun.StartedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td>{{if .Running}}<span class="st st-running">running</span>{{else if .Enabled}}{{datetime .NextRun}} ({{until .NextRun}}){{else}}—{{end}}</td></tr>
+  {{end}}
+</table>
+<p><a href="/schedule">edit schedule →</a></p>
+
+<h2>DNS resolvers <span class="muted small">(since process start)</span></h2>
+<table class="compact">
+  <tr><th>resolver</th><th>provider</th><th class="num">queries</th><th class="num">failures</th><th class="num">timeouts</th><th class="num">avg latency</th><th>benched</th></tr>
+  {{range $d.Resolvers}}
+  <tr><td>{{.Addr}}</td><td>{{.Provider}}</td><td class="num">{{.Queries}}</td><td class="num">{{.Failures}}</td><td class="num">{{.Timeouts}}</td><td class="num">{{ms .AvgLatency}} ms</td><td>{{if .Benched}}<span class="st-missing">yes</span>{{else}}no{{end}}</td></tr>
+  {{end}}
+</table>
+
+<h2>RDAP servers <span class="muted small">(top 50 by requests since process start; {{$d.RDAPTLDs}} TLDs have a known server)</span></h2>
+<table class="compact">
+  <tr><th>host</th><th class="num">requests</th><th class="num">failures</th><th class="num">throttled</th><th>circuit</th></tr>
+  {{range $d.RDAPHosts}}
+  <tr><td>{{.Host}}</td><td class="num">{{.Requests}}</td><td class="num">{{.Failures}}</td><td class="num">{{.Throttled}}</td><td>{{if .CircuitOpen}}<span class="st-missing">open</span>{{else}}closed{{end}}</td></tr>
+  {{else}}<tr><td colspan="5" class="muted">no RDAP requests yet</td></tr>{{end}}
+</table>
+{{end}}
+{{define "startrow"}}
+<tr><td>{{kindLabel .Kind}}{{if .Scope}} ({{.Scope}}){{end}}</td><td>{{.Desc}}</td>
+  <td>{{if .Last.ID}}<a href="/run/{{.Last.ID}}" class="st st-{{.Last.Status}}">{{.Last.Status}}</a> {{ago .Last.StartedAt}}{{if .Last.Scope}} <span class="muted">({{.Last.Scope}})</span>{{end}}{{else}}<span class="muted">never</span>{{end}}</td>
+  <td><form method="post" action="/runs/start" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="scope" value="{{.Scope}}"><button class="primary">start</button></form></td></tr>
+{{end}}

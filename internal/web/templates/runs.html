@@ -1,0 +1,11 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Run log <span class="muted small">{{$d.Total}}</span></h1>
+<form class="filters" method="get" action="/runs">
+  <label>kind <select name="kind"><option value="">all</option>{{range $d.Kinds}}<option value="{{.}}" {{if eq $d.Kind .}}selected{{end}}>{{kindLabel .}}</option>{{end}}</select></label>
+  <button class="primary">apply</button>
+</form>
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{template "runtable" $d.Items}}
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{end}}

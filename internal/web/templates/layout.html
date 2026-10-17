@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · PSL Monitor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{{if .User}}
+<header>
+  <a class="brand" href="/">PSL Monitor</a>
+  <a href="/" class="{{if eq .Nav "dash"}}on{{end}}">Dashboard</a>
+  <a href="/targets?flagged=1&unacked=1" class="{{if eq .Nav "flagged"}}on{{end}}">Flagged</a>
+  <a href="/targets?section=private" class="{{if eq .Nav "private"}}on{{end}}">Private</a>
+  <a href="/targets?section=icann" class="{{if eq .Nav "icann"}}on{{end}}">ICANN</a>
+  <a href="/search" class="{{if eq .Nav "search"}}on{{end}}">Search</a>
+  <a href="/txt" class="{{if eq .Nav "txt"}}on{{end}}">_psl TXT</a>
+  <a href="/rules" class="{{if eq .Nav "rules"}}on{{end}}">Rules</a>
+  <a href="/events" class="{{if eq .Nav "events"}}on{{end}}">Events</a>
+  <a href="/snapshots" class="{{if eq .Nav "snapshots"}}on{{end}}">Snapshots</a>
+  <a href="/workers" class="{{if eq .Nav "workers"}}on{{end}}">Workers</a>
+  <a href="/runs" class="{{if eq .Nav "runs"}}on{{end}}">Runs</a>
+  <a href="/schedule" class="{{if eq .Nav "schedule"}}on{{end}}">Schedule</a>
+  <a href="/settings" class="{{if eq .Nav "settings"}}on{{end}}">Settings</a>
+  <a href="/users" class="{{if eq .Nav "users"}}on{{end}}">Users</a>
+  <a href="/help" class="{{if eq .Nav "help"}}on{{end}}">Help</a>
+  <span class="right">
+    <span class="small" title="PSL commit {{.Snap.Commit}}">PSL {{if .Snap.Version}}{{.Snap.Version}}{{else}}not synced{{end}}</span>
+    <a href="/account" class="{{if eq .Nav "account"}}on{{end}}">{{.User.Username}}</a>
+    <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>logout</button></form>
+  </span>
+</header>
+{{range .Running}}
+<div class="runbar">running: <a href="/run/{{.RunID}}">#{{.RunID}} {{kindLabel .Kind}}{{if .Scope}} ({{.Scope}}){{end}}</a> — {{.Phase}} — {{.Done}}/{{.Total}}{{if .Errors}}, {{.Errors}} errors{{end}}</div>
+{{end}}
+{{end}}
+<main>
+{{if .Flash}}<div class="flash ok">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{template "content" .}}
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
+{{define "sevtag"}}<span class="sev sev-{{sev .}}">{{sev .}}</span>{{end}}
+{{define "pager"}}
+{{if gt .Pages 1}}
+<div class="pager">
+  {{if gt .Page 1}}<a class="btn" href="{{query .Q "page" "1"}}">« first</a> <a class="btn" href="{{query .Q "page" (printf "%d" (sub .Page 1))}}">‹ prev</a>{{end}}
+  <span>page {{.Page}} / {{.Pages}}</span>
+  {{if lt .Page .Pages}}<a class="btn" href="{{query .Q "page" (printf "%d" (add .Page 1))}}">next ›</a> <a class="btn" href="{{query .Q "page" (printf "%d" .Pages)}}">last »</a>{{end}}
+</div>
+{{end}}
+{{end}}

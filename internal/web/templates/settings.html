@@ -1,0 +1,38 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Settings</h1>
+<form method="post" action="/settings">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <table class="kv">
+  {{range $d.Defs}}
+    <tr>
+      <th>{{.Label}}<div class="muted small">{{.Key}}</div></th>
+      <td>
+        {{if eq .Kind "textarea"}}<textarea name="{{.Key}}">{{index $d.Values .Key}}</textarea>
+        {{else if eq .Kind "bool"}}<label><input type="checkbox" name="{{.Key}}" value="1" {{if eq (index $d.Values .Key) "1"}}checked{{end}}> enabled</label>
+        {{else if eq .Kind "int"}}<input type="number" name="{{.Key}}" value="{{index $d.Values .Key}}" min="{{.Min}}" max="{{.Max}}" style="width:8em"> <span class="muted small">[{{.Min}}–{{.Max}}]</span>
+        {{else}}<input type="text" name="{{.Key}}" value="{{index $d.Values .Key}}" style="width:100%">{{end}}
+        {{if .Help}}<div class="muted small">{{.Help}}</div>{{end}}
+      </td>
+    </tr>
+  {{end}}
+  </table>
+  <button class="primary">save &amp; apply</button>
+</form>
+
+<h2>RDAP bootstrap</h2>
+<form method="post" action="/settings/rdap-bootstrap" class="actions">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <span>The IANA bootstrap (data.iana.org/rdap/dns.json) is embedded at build time and refreshed at startup and daily.</span>
+  <button>refresh now</button>
+</form>
+
+<h2>Email (SMTP) — from .env, read-only</h2>
+<table class="kv">
+  {{range $k, $v := $d.SMTP}}<tr><th>{{$k}}</th><td>{{or $v "—"}}</td></tr>{{end}}
+</table>
+<h2>Environment — read-only</h2>
+<table class="kv">
+  {{range $k, $v := $d.Env}}<tr><th>{{$k}}</th><td>{{or $v "—"}}</td></tr>{{end}}
+</table>
+{{end}}

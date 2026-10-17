@@ -1,0 +1,31 @@
+{{define "content"}}
+<h1>Help</h1>
+<h2>What is checked</h2>
+<table class="kv">
+  <tr><th>Private targets</th><td>Each private rule is reduced to its <b>ICANN suffix + 1 label</b> (the registrable, "expirable" domain): <code>foo1.bar.edu.pl</code>, <code>*.foo3.bar.edu.pl</code> → <code>bar.edu.pl</code>. The PSL algorithm (normal, <code>*.</code> wildcard and <code>!</code> exception rules) is applied using ICANN rules only.</td></tr>
+  <tr><th>ICANN targets</th><td>Every ICANN rule name itself (wildcards stripped, e.g. <code>*.kawasaki.jp</code> → <code>kawasaki.jp</code>; exceptions <code>!city.kawasaki.jp</code> → <code>city.kawasaki.jp</code>).</td></tr>
+  <tr><th>DNS</th><td>NS query via a pool of public resolvers (load-balanced, rate-limited, unhealthy resolvers benched). Negative answers (NXDOMAIN/NODATA/SERVFAIL) must be confirmed by a <b>second provider</b>; one positive answer wins. Answers from several resolvers are unioned.</td></tr>
+  <tr><th>Unchanged NS</th><td>NS is "unchanged" as long as <b>at least one</b> NS from the baseline is still present (so partial / differing resolver answers don't trigger). The baseline follows gradual migrations.</td></tr>
+  <tr><th>Grace period</th><td>Currently <b>{{index .Data "Grace"}}</b> distinct UTC days. A domain that had NS and then has none (NXDOMAIN / SERVFAIL / NODATA / timeouts on ≥2 providers) on that many distinct days becomes <span class="st st-defunct">defunct</span>; a fully disjoint NS set for that many days becomes <span class="st st-changed">changed</span>. Inconclusive lookups (local errors) neither advance nor reset counters. Re-running on the same day does not advance the counter.</td></tr>
+  <tr><th>RDAP</th><td>Anomalies are auto-confirmed via RDAP (IANA bootstrap; TLDs via rdap.iana.org). Creation and expiry dates are cached on every lookup; errors never overwrite cached data. A changed creation date means re-registration. Not all ccTLDs offer RDAP — add overrides in Settings if you know a server.</td></tr>
+  <tr><th>_psl TXT</th><td>Private rules must have <code>_psl.&lt;rule&gt;</code> TXT pointing at the PR. Rules listed in upstream <code>missingTXT</code> are exempt.</td></tr>
+  <tr><th>Acknowledge</th><td>Acknowledging hides a target from "unacknowledged" views until a new flag type appears. "Accept current NS" makes the current NS set the new baseline (use after verifying a legitimate DNS migration).</td></tr>
+</table>
+
+<h2>Severity / colour coding</h2>
+<table class="compact" style="width:auto">
+  <tr><td>{{template "sevtag" 5}}</td><td>confirmed: RDAP expired / not found / pending delete / re-registered, or defunct + RDAP confirms</td></tr>
+  <tr><td>{{template "sevtag" 4}}</td><td>probable: NS changed for full grace period, defunct without RDAP, parked NS, expiring ≤30d, hold status, new suffix registration / delegation (ICANN)</td></tr>
+  <tr><td>{{template "sevtag" 3}}</td><td>review: defunct but registration active (lame delegation), expiring ≤90d, newly registered (private), _psl TXT missing</td></tr>
+  <tr><td>{{template "sevtag" 2}}</td><td>watch: inside grace period (ns_missing / ns_changing), private entry with &lt;1y registration left</td></tr>
+  <tr><td>{{template "sevtag" 1}}</td><td>info: resolvers disagreed</td></tr>
+</table>
+
+<h2>Flags</h2>
+<table class="compact">
+  {{range (index .Data "Flags")}}<tr><td><a href="/targets?flag={{.Type}}">{{.Type}}</a></td><td>{{.Help}}</td></tr>{{end}}
+</table>
+
+<h2>Search syntax</h2>
+<p><code>edu.pl</code> substring (name, unicode name, entity, note) · <code>=edu.pl</code> exact name · <code>*.edu.pl</code> ends with <code>.edu.pl</code>. Combine with the filters in <a href="/search">advanced search</a>; all filter URLs are bookmarkable and exportable (txt/csv).</p>
+{{end}}

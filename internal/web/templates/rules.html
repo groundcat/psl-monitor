@@ -1,0 +1,32 @@
+{{define "content"}}
+{{$d := .Data}}{{$f := $d.Filter}}
+<h1>PSL rules <span class="muted small">{{$d.Total}} results</span></h1>
+<form class="filters" method="get" action="/rules">
+  <label>search <input type="search" name="q" value="{{$f.Q}}" placeholder="rule / entity / submitter" size="30"></label>
+  <label>section <select name="section"><option value="">all</option><option value="private" {{if eq $f.Section "private"}}selected{{end}}>private</option><option value="icann" {{if eq $f.Section "icann"}}selected{{end}}>icann</option></select></label>
+  <label>kind <select name="kind"><option value="">any</option>{{range (split ",normal,wildcard,exception,")}}{{if .}}<option {{if eq $f.Kind .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
+  <label>_psl TXT <select name="txt"><option value="">any</option>{{range $d.TXTOpts}}<option {{if eq $f.TXT .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>state <select name="active"><option value="">active</option><option value="0" {{if eq $f.Active "0"}}selected{{end}}>removed</option><option value="all" {{if eq $f.Active "all"}}selected{{end}}>all</option></select></label>
+  <label>sort <select name="sort">{{range (split ",line,name,entity,txt,first_seen,")}}{{if .}}<option {{if eq $f.Sort .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
+  <button class="primary">apply</button> <a class="btn" href="/rules">reset</a>
+</form>
+{{template "rulestable" $d}}
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{end}}
+{{define "rulestable"}}
+<table class="compact">
+  <tr><th>line</th><th>section</th><th>rule</th><th>kind</th><th>target</th><th>entity</th><th>submitter</th><th>_psl TXT</th><th>record / PR</th><th>first seen</th></tr>
+  {{range .Items}}
+  <tr>
+    <td class="num">{{.Line}}</td><td>{{.Section}}</td>
+    <td class="wrap">{{.Raw}}{{if ne .Name .UName}} <span class="muted">({{.UName}})</span>{{end}}{{if not .Active}} <span class="tag">removed {{date .RemovedAt}}</span>{{end}}</td>
+    <td>{{.Kind}}</td>
+    <td class="wrap"><a href="/target/{{.TargetID}}">{{.TargetName}}</a></td>
+    <td class="small">{{.Entity}}</td><td class="small wrap">{{.Submitter}}</td>
+    <td>{{if eq .Section "private"}}<span class="st st-{{.TXTStatus}} {{if eq .TXTStatus "missing"}}txt{{end}}">{{or .TXTStatus "unchecked"}}</span>{{if .Exempt}} <span class="tag">exempt</span>{{end}}{{else}}<span class="muted">n/a</span>{{end}}</td>
+    <td class="small wrap">{{if .TXTPRs}}{{range (split .TXTPRs)}}<a href="https://github.com/publicsuffix/list/pull/{{.}}" rel="noopener noreferrer" target="_blank">#{{.}}</a> {{end}}{{else}}{{.TXTRecords}}{{end}}</td>
+    <td class="nowrap small">{{date .FirstSeen}}</td>
+  </tr>
+  {{else}}<tr><td colspan="10" class="muted">No rules.</td></tr>{{end}}
+</table>
+{{end}}

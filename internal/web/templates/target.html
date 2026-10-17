@@ -1,0 +1,119 @@
+{{define "content"}}
+{{$d := .Data}}{{$t := $d.T}}
+<h1>{{template "sevtag" $t.Severity}} {{$t.Name}}{{if ne $t.Name $t.UName}} <span class="muted">({{$t.UName}})</span>{{end}} <span class="muted small">{{$t.Section}}</span></h1>
+
+<div class="actions">
+  <form method="post" action="/target/{{$t.ID}}/recheck" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>re-check DNS</button></form>
+  <form method="post" action="/target/{{$t.ID}}/recheck" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="full" value="1"><button>re-check DNS + RDAP + TXT</button></form>
+  <a class="btn" href="https://rdap.org/domain/{{$t.Name}}" rel="noopener noreferrer" target="_blank">rdap.org ↗</a>
+  <a class="btn" href="https://github.com/publicsuffix/list/blob/main/public_suffix_list.dat" rel="noopener noreferrer" target="_blank">PSL source ↗</a>
+  <a class="btn" href="/events?q={{$t.Name}}">events</a>
+</div>
+
+<h2>Findings</h2>
+{{if $t.Flags}}
+<table>
+  <tr><th>severity</th><th>flag</th><th>confidence</th><th>detail</th></tr>
+  {{range $t.Flags}}
+  <tr class="{{sevRow .Severity}}"><td>{{template "sevtag" .Severity}}</td><td title="{{flagHelp .Type}}">{{.Type}}</td><td>{{.Confidence}}</td><td class="wrap">{{.Msg}}</td></tr>
+  {{end}}
+</table>
+<p class="small muted">Flagged since {{datetime $t.FlaggedSince}}.
+{{if not (isZero $t.AckedAt)}} Acknowledged by <b>{{$t.AckedBy}}</b> at {{datetime $t.AckedAt}}{{if $t.AckedAt.Before $t.FlaggedSince}} — <span class="st-missing">new flags since acknowledgement</span>{{end}}.{{end}}</p>
+{{else}}
+<p class="st-ok">No findings.</p>
+{{end}}
+
+<div class="grid">
+  <div class="box">
+    <h3>Acknowledge</h3>
+    <form method="post" action="/target/{{$t.ID}}/ack">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <p><input type="text" name="note" placeholder="note (optional)" style="width:100%"></p>
+      <p><label><input type="checkbox" name="accept_ns" value="1"> accept current NS as new baseline (clears changed / appeared / defunct state)</label></p>
+      <button class="primary">acknowledge</button>
+    </form>
+    {{if not (isZero $t.AckedAt)}}<form method="post" action="/target/{{$t.ID}}/unack" class="actions"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>remove ack</button></form>{{end}}
+  </div>
+  <form method="post" action="/target/{{$t.ID}}/note" class="box">
+    <h3>Note</h3>
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <textarea name="note" style="min-height:4rem">{{$t.Note}}</textarea>
+    <button>save note</button>
+  </form>
+</div>
+
+<div class="grid">
+<div>
+<h2>DNS</h2>
+<table class="kv">
+  <tr><th>state</th><td><span class="st st-{{$t.DNS.State}}">{{$t.DNS.State}}</span></td></tr>
+  <tr><th>last lookup status</th><td><span class="st st-{{$t.DNS.LastStatus}}">{{or $t.DNS.LastStatus "—"}}</span>{{if $t.DNS.Inconsistent}} <span class="tag">resolvers disagreed</span>{{end}}</td></tr>
+  <tr><th>last checked</th><td>{{datetime $t.DNSCheckedAt}} ({{ago $t.DNSCheckedAt}})</td></tr>
+  <tr><th>current NS</th><td class="wrap">{{range $t.DNS.Current}}{{.}}<br>{{else}}—{{end}}</td></tr>
+  <tr><th>baseline NS</th><td class="wrap">{{range $t.DNS.Baseline}}{{.}}<br>{{else}}—{{end}}<span class="muted small">since {{datetime $t.DNS.BaselineAt}}</span></td></tr>
+  {{if $t.DNS.Previous}}<tr><th>previous baseline</th><td class="wrap">{{join $t.DNS.Previous ", "}}</td></tr>{{end}}
+  <tr><th>last NS seen</th><td>{{datetime $t.DNS.LastOKAt}}</td></tr>
+  <tr><th>missing days</th><td>{{$t.DNS.MissingDays}}{{if not (isZero $t.DNS.MissingSince)}} (since {{datetime $t.DNS.MissingSince}}){{end}}</td></tr>
+  <tr><th>changed days</th><td>{{$t.DNS.ChangedDays}}{{if not (isZero $t.DNS.ChangedSince)}} (since {{datetime $t.DNS.ChangedSince}}){{end}}</td></tr>
+  {{if $t.ParkedNS}}<tr><th>parking-like NS</th><td class="st-missing">{{join $t.ParkedNS ", "}}</td></tr>{{end}}
+  <tr><th>resolver answers</th><td class="small wrap">{{$t.DNSDetail}}</td></tr>
+</table>
+</div>
+<div>
+<h2>RDAP (cached)</h2>
+<table class="kv">
+  <tr><th>result</th><td><span class="st st-{{$t.RDAP.Result}}">{{or $t.RDAP.Result "never checked"}}</span>{{if $t.RDAPError}} <span class="small st-error">{{$t.RDAPError}}</span>{{end}}</td></tr>
+  <tr><th>server</th><td class="wrap">{{or $t.RDAPServer "—"}}</td></tr>
+  <tr><th>checked</th><td>{{datetime $t.RDAP.CheckedAt}} ({{ago $t.RDAP.CheckedAt}})</td></tr>
+  <tr><th>created</th><td>{{date $t.RDAP.Created}}{{if not (isZero $t.RDAP.PrevCreated)}} <span class="st-missing">(previously {{date $t.RDAP.PrevCreated}})</span>{{end}}</td></tr>
+  <tr><th>expires</th><td>{{date $t.RDAP.Expires}}{{if not (isZero $t.RDAP.Expires)}} ({{days $t.RDAP.Expires}} days){{end}}</td></tr>
+  <tr><th>last changed</th><td>{{date $t.RDAPChanged}}</td></tr>
+  <tr><th>status</th><td>{{range $t.RDAP.Statuses}}<span class="tag">{{.}}</span>{{else}}—{{end}}</td></tr>
+  <tr><th>registrar</th><td>{{or $t.RDAPRegistrar "—"}}</td></tr>
+  <tr><th>RDAP nameservers</th><td class="wrap">{{join $t.RDAPNS ", "}}</td></tr>
+  <tr><th>ever found</th><td>{{$t.RDAP.EverFound}}</td></tr>
+</table>
+<h2>Meta</h2>
+<table class="kv">
+  <tr><th>parent ICANN suffix</th><td>{{if $t.Suffix}}<a href="/targets?section=icann&q=%3D{{$t.Suffix}}">{{$t.Suffix}}</a>{{else}}— (TLD){{end}}</td></tr>
+  <tr><th>TLD</th><td><a href="/search?tld={{$t.TLD}}">{{$t.TLD}}</a></td></tr>
+  <tr><th>entity</th><td>{{if $t.Entity}}<a href="/search?entity={{$t.Entity}}">{{$t.Entity}}</a>{{end}}</td></tr>
+  <tr><th>first seen</th><td>{{datetime $t.FirstSeen}}</td></tr>
+  {{if not $t.Active}}<tr><th>removed from PSL</th><td>{{datetime $t.RemovedAt}}</td></tr>{{end}}
+</table>
+</div>
+</div>
+
+<h2>PSL rules covered ({{len $d.Rules}})</h2>
+<table class="compact">
+  <tr><th>rule</th><th>kind</th><th>line</th><th>entity</th><th>submitter</th>{{if eq $t.Section "private"}}<th>_psl TXT</th><th>record / PR</th><th>checked</th>{{end}}<th>active</th></tr>
+  {{range $d.Rules}}
+  <tr>
+    <td class="wrap">{{.Raw}}</td><td>{{.Kind}}</td><td class="num">{{.Line}}</td><td>{{.Entity}}</td><td class="small">{{.Submitter}}</td>
+    {{if eq $t.Section "private"}}<td><span class="st st-{{.TXTStatus}} {{if eq .TXTStatus "missing"}}txt{{end}}">{{or .TXTStatus "unchecked"}}</span>{{if .Exempt}} <span class="tag">exempt</span>{{end}}</td>
+    <td class="small wrap">{{if .TXTPRs}}{{range (split .TXTPRs)}}<a href="https://github.com/publicsuffix/list/pull/{{.}}" rel="noopener noreferrer" target="_blank">#{{.}}</a> {{end}}{{else}}{{.TXTRecords}}{{end}}</td>
+    <td class="small nowrap">{{ago .TXTCheckedAt}}</td>{{end}}
+    <td>{{if .Active}}yes{{else}}removed {{date .RemovedAt}}{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+
+<h2>Check history</h2>
+{{if $d.History}}
+<table class="compact">
+  <tr><th>run</th><th>time (UTC)</th><th>dns status</th><th>dns state</th><th>NS</th><th>rdap</th><th>created</th><th>expires</th><th>sev</th><th>flags</th></tr>
+  {{range $d.History}}
+  <tr class="{{sevRow .Severity}}">
+    <td><a href="/run/{{.RunID}}">#{{.RunID}}</a></td><td class="nowrap">{{.Name}}</td>
+    <td><span class="st st-{{.DNSStatus}}">{{.DNSStatus}}</span></td><td><span class="st st-{{.DNSState}}">{{.DNSState}}</span></td>
+    <td class="small wrap">{{.NS}}</td><td>{{.RDAPResult}}</td><td class="nowrap">{{date .RDAPCreated}}</td><td class="nowrap">{{date .RDAPExpires}}</td>
+    <td>{{template "sevtag" .Severity}}</td><td class="small">{{trimc .FlagTypes}}</td>
+  </tr>
+  {{end}}
+</table>
+{{else}}<p class="muted">No history yet.</p>{{end}}
+
+<h2>Events</h2>
+{{template "eventtable" $d.Events}}
+{{end}}

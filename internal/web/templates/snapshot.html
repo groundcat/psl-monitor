@@ -1,0 +1,17 @@
+{{define "content"}}
+{{$s := .Data}}
+<h1>Snapshot #{{$s.ID}} — {{$s.Version}}</h1>
+<table class="kv">
+  <tr><th>commit</th><td><a href="https://github.com/publicsuffix/list/commit/{{$s.Commit}}" rel="noopener noreferrer" target="_blank">{{$s.Commit}}</a></td></tr>
+  <tr><th>sha256</th><td>{{$s.SHA256}}</td></tr>
+  <tr><th>fetched</th><td>{{datetime $s.FetchedAt}}</td></tr>
+  <tr><th>rules</th><td>icann {{$s.RulesICANN}}, private {{$s.RulesPrivate}}</td></tr>
+  <tr><th>targets</th><td>icann {{$s.TargetsICANN}}, private {{$s.TargetsPrivate}}</td></tr>
+</table>
+<div class="grid">
+  <div><h2>Added rules ({{len $s.Added}})</h2><pre class="log">{{range $s.Added}}+ {{.}}
+{{else}}(none, or first snapshot){{end}}</pre></div>
+  <div><h2>Removed rules ({{len $s.Removed}})</h2><pre class="log">{{range $s.Removed}}- {{.}}
+{{else}}(none){{end}}</pre></div>
+</div>
+{{end}}

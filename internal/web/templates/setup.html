@@ -1,0 +1,13 @@
+{{define "content"}}
+<div class="login">
+  <h1>Initial setup</h1>
+  <p class="muted">No admin users exist yet. Create the first admin account. (Alternatively set ADMIN_USERNAME / ADMIN_PASSWORD in .env.)</p>
+  <form method="post" action="/setup">
+    <label>Username</label><input type="text" name="username" required autofocus>
+    <label>Email (optional, for reports)</label><input type="email" name="email">
+    <label>Password (min 10 chars)</label><input type="password" name="password" required minlength="10" autocomplete="new-password">
+    <label>Repeat password</label><input type="password" name="password2" required minlength="10" autocomplete="new-password">
+    <p><button class="primary" type="submit">Create admin</button></p>
+  </form>
+</div>
+{{end}}

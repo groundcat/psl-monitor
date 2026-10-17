@@ -1,0 +1,22 @@
+{{define "content"}}
+<h1>Schedule</h1>
+<p class="muted">Intervals accept <code>30m</code>, <code>12h</code>, <code>1d</code>, <code>7d</code>, <code>2w</code>. For intervals ≥ 1 day the run is aligned to the given UTC time. Jobs that were missed while the container was down run at the next check (catch-up).
+The grace period counts <b>distinct UTC days</b>, so the private DNS check should run daily for the 5-day confirmation to work as intended.</p>
+<form method="post" action="/schedule">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <table class="compact">
+    <tr><th>job</th><th>enabled</th><th>interval</th><th>at (UTC, HH:MM)</th><th>last run</th><th>next run</th></tr>
+    {{range .Data}}
+    <tr>
+      <td>{{.Label}}</td>
+      <td><input type="checkbox" name="{{.Key}}.enabled" value="1" {{if .Enabled}}checked{{end}}></td>
+      <td><input type="text" name="{{.Key}}.interval" value="{{interval .Interval}}" size="6"></td>
+      <td><input type="text" name="{{.Key}}.at" value="{{.At}}" size="6" placeholder="any"></td>
+      <td>{{if .HasLast}}<a href="/run/{{.LastRun.ID}}" class="st st-{{.LastRun.Status}}">{{.LastRun.Status}}</a> {{datetime .LastRun.StartedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>{{if .Running}}<span class="st st-running">running</span>{{else if .Enabled}}{{datetime .NextRun}} ({{until .NextRun}}){{else}}—{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+  <button class="primary">save schedule</button>
+</form>
+{{end}}

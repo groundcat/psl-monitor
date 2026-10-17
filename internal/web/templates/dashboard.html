@@ -1,0 +1,79 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Dashboard</h1>
+{{if not .Snap.Version}}
+<div class="flash err">The PSL has not been synced yet. Go to <a href="/workers">Workers</a> and start a "DNS check (private)" or "PSL sync" run.</div>
+{{end}}
+
+<div class="grid">
+{{range $sec := $d.Sections}}
+  <div class="box">
+    <h3>{{if eq $sec "private"}}Private section{{else}}ICANN section{{end}} — {{index $d.Counts.BySection $sec}} targets</h3>
+    <table class="compact">
+      <tr><th>severity</th><th class="num">count</th></tr>
+      {{range $lv := $d.SevLevels}}{{$n := index (index $d.Counts.BySev $sec) $lv}}
+      <tr><td>{{template "sevtag" $lv}}</td><td class="num">{{if $n}}<a href="/targets?section={{$sec}}&minsev={{$lv}}">{{$n}}</a>{{else}}0{{end}}</td></tr>
+      {{end}}
+    </table>
+    <p>Unacknowledged flagged (≥low): <a href="/targets?section={{$sec}}&flagged=1&unacked=1"><b>{{index $d.Counts.Unacked $sec}}</b></a></p>
+  </div>
+{{end}}
+  <div class="box">
+    <h3>DNS state</h3>
+    <table class="compact">
+      <tr><th>state</th><th class="num">private</th><th class="num">icann</th></tr>
+      {{range $st := $d.DNSStates}}
+      <tr><td><span class="st st-{{$st}}">{{$st}}</span></td>
+        <td class="num"><a href="/targets?section=private&dns={{$st}}">{{index (index $d.Counts.ByDNS "private") $st}}</a></td>
+        <td class="num"><a href="/targets?section=icann&dns={{$st}}">{{index (index $d.Counts.ByDNS "icann") $st}}</a></td></tr>
+      {{end}}
+    </table>
+  </div>
+  <div class="box">
+    <h3>RDAP cache</h3>
+    <table class="compact">
+      <tr><th>result</th><th class="num">private</th><th class="num">icann</th></tr>
+      {{range $st := $d.RDAPRes}}
+      <tr><td><span class="st st-{{$st}}">{{$st}}</span></td>
+        <td class="num"><a href="/targets?section=private&rdap={{$st}}">{{index (index $d.Counts.ByRDAP "private") $st}}</a></td>
+        <td class="num"><a href="/targets?section=icann&rdap={{$st}}">{{index (index $d.Counts.ByRDAP "icann") $st}}</a></td></tr>
+      {{end}}
+    </table>
+    <p class="small">Quick: <a href="/targets?exp_within=30&sort=expires">expiring ≤30d</a> · <a href="/targets?exp_within=90&sort=expires">≤90d</a> · <a href="/targets?flag=expired">expired</a> · <a href="/targets?created_within=365&sort=created&desc=1">registered ≤1y</a></p>
+  </div>
+  <div class="box">
+    <h3>Flags</h3>
+    <table class="compact">
+      <tr><th>flag</th><th class="num">private</th><th class="num">icann</th></tr>
+      {{range $f := $d.FlagTypes}}{{$p := index (index $d.Counts.ByFlag "private") $f}}{{$i := index (index $d.Counts.ByFlag "icann") $f}}
+      {{if or $p $i}}<tr><td title="{{flagHelp $f}}">{{$f}}</td>
+        <td class="num">{{if $p}}<a href="/targets?section=private&flag={{$f}}">{{$p}}</a>{{else}}0{{end}}</td>
+        <td class="num">{{if $i}}<a href="/targets?section=icann&flag={{$f}}">{{$i}}</a>{{else}}0{{end}}</td></tr>{{end}}
+      {{end}}
+    </table>
+    <p class="small">Private targets with rules missing _psl TXT: <a href="/targets?section=private&txt=missing">{{$d.Counts.TXTMissing}}</a></p>
+  </div>
+  <div class="box">
+    <h3>Scheduled jobs</h3>
+    <table class="compact">
+      <tr><th>job</th><th>last</th><th>next</th></tr>
+      {{range $d.Jobs}}
+      <tr><td>{{.Label}}</td>
+        <td>{{if .HasLast}}<a href="/run/{{.LastRun.ID}}" class="st st-{{.LastRun.Status}}">{{.LastRun.Status}}</a> {{ago .LastRun.StartedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+        <td>{{if .Running}}<span class="st st-running">running</span>{{else if .Enabled}}{{until .NextRun}}{{else}}<span class="muted">disabled</span>{{end}}</td></tr>
+      {{end}}
+    </table>
+  </div>
+</div>
+
+<h2>Top unacknowledged (high / critical)</h2>
+{{template "targettable" (dict_targets $d.Top $.CSRF false "")}}
+<p><a href="/targets?minsev=4&unacked=1">all high/critical unacknowledged →</a></p>
+
+<h2>Recent events</h2>
+{{template "eventtable" $d.Events}}
+<p><a href="/events">all events →</a></p>
+
+<h2>Recent runs</h2>
+{{template "runtable" $d.LastRuns}}
+{{end}}

@@ -1,0 +1,28 @@
+services:
+  pslmon:
+    build: .
+    image: psl-monitor:latest
+    container_name: psl-monitor
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/pslmon.db
+      LISTEN_ADDR: ":8080"
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - pslmon-data:/data
+    # DNS checks use public resolvers directly (UDP/TCP 53); RDAP uses HTTPS.
+    stop_grace_period: 30s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pslmon-data:

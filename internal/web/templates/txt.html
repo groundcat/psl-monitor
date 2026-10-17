@@ -1,0 +1,45 @@
+{{define "content"}}
+{{$d := .Data}}{{$f := $d.Filter}}
+<h1>_psl TXT compliance (private section)</h1>
+<p class="muted">Each private rule must publish <code>_psl.&lt;rule&gt; TXT "https://github.com/publicsuffix/list/pull/NNN"</code> (wildcards: at the name below <code>*.</code>).
+Rules in the upstream <code>missingTXT</code> exemption list ({{$d.Exceptions}} entries) are grandfathered. Lookups that are inconclusive keep the last conclusive status.</p>
+
+<table class="compact" style="width:auto">
+  <tr>{{range (split ",missing,valid,present,exempt,unknown,unchecked,")}}{{if .}}<th>{{.}}</th>{{end}}{{end}}</tr>
+  <tr>{{range (split ",missing,valid,present,exempt,unknown,unchecked,")}}{{if .}}<td class="num"><a href="/txt?txt={{.}}">{{index $d.Counts .}}</a></td>{{end}}{{end}}</tr>
+</table>
+<p class="small"><b>missing</b> = non-compliant (no record, not exempt) · <b>valid</b> = record with PR link · <b>present</b> = record without PR link · <b>exempt</b> = no record, grandfathered · <b>unknown</b> = lookup failed (timeouts/servfail)</p>
+
+<div class="actions">
+  <form method="post" action="/runs/start" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="kind" value="txt"><input type="hidden" name="back" value="/txt"><button class="primary">run TXT scan on all private rules</button></form>
+  <form method="post" action="/txt/refresh-exceptions" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>refresh exemption list from upstream</button></form>
+  {{if $d.HasRun}}<span class="muted">last scan: <a href="/run/{{$d.LastRun.ID}}">#{{$d.LastRun.ID}}</a> <span class="st st-{{$d.LastRun.Status}}">{{$d.LastRun.Status}}</span> {{ago $d.LastRun.StartedAt}}</span>{{else}}<span class="muted">never scanned</span>{{end}}
+</div>
+
+<form class="filters" method="get" action="/txt">
+  <label>search <input type="search" name="q" value="{{$f.Q}}" size="30"></label>
+  <label>status <select name="txt"><option value="" {{if eq $f.TXT ""}}selected{{end}}>any</option>{{range $d.TXTOpts}}<option {{if eq $f.TXT .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <input type="hidden" name="section" value="private">
+  <label>sort <select name="sort">{{range (split ",entity,name,line,txt,first_seen,")}}{{if .}}<option {{if eq $f.Sort .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
+  <button class="primary">apply</button>
+</form>
+<p class="muted">{{$d.Total}} rules</p>
+{{template "rulestable" $d}}
+{{template "pager" (pg $d.Page $d.Pages $.Q)}}
+{{end}}
+{{define "rulestable"}}
+<table class="compact">
+  <tr><th>line</th><th>rule</th><th>kind</th><th>target</th><th>entity</th><th>submitter</th><th>_psl TXT</th><th>record / PR</th><th>checked</th></tr>
+  {{range .Items}}
+  <tr>
+    <td class="num">{{.Line}}</td>
+    <td class="wrap">{{.Raw}}</td><td>{{.Kind}}</td>
+    <td class="wrap"><a href="/target/{{.TargetID}}">{{.TargetName}}</a></td>
+    <td class="small">{{.Entity}}</td><td class="small wrap">{{.Submitter}}</td>
+    <td><span class="st st-{{.TXTStatus}} {{if eq .TXTStatus "missing"}}txt{{end}}">{{or .TXTStatus "unchecked"}}</span>{{if .Exempt}} <span class="tag">exempt</span>{{end}}</td>
+    <td class="small wrap">{{if .TXTPRs}}{{range (split .TXTPRs)}}<a href="https://github.com/publicsuffix/list/pull/{{.}}" rel="noopener noreferrer" target="_blank">#{{.}}</a> {{end}}{{else}}{{.TXTRecords}}{{end}}</td>
+    <td class="nowrap small">{{ago .TXTCheckedAt}}</td>
+  </tr>
+  {{else}}<tr><td colspan="9" class="muted">No rules.</td></tr>{{end}}
+</table>
+{{end}}

@@ -1,0 +1,21 @@
+{{define "content"}}
+<h1>My account — {{.User.Username}}</h1>
+<div class="grid">
+  <form method="post" action="/account" class="box">
+    <h3>Profile</h3>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <p><label>Email address<br><input type="email" name="email" value="{{.User.Email}}" size="36"></label></p>
+    <p><label><input type="checkbox" name="reports" value="1" {{if .User.ReceiveReports}}checked{{end}}> receive the weekly report</label></p>
+    {{if not (index .Data "SMTP")}}<p class="st-missing small">SMTP is not configured (.env SMTP_HOST / SMTP_FROM) — reports cannot be sent.</p>{{end}}
+    <button class="primary">save</button>
+  </form>
+  <form method="post" action="/account/password" class="box">
+    <h3>Change password</h3>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <p><label>current<br><input type="password" name="current" required autocomplete="current-password"></label></p>
+    <p><label>new (min 10)<br><input type="password" name="password" required minlength="10" autocomplete="new-password"></label></p>
+    <p><label>repeat new<br><input type="password" name="password2" required minlength="10" autocomplete="new-password"></label></p>
+    <button class="primary">change password</button>
+  </form>
+</div>
+{{end}}

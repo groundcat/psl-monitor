@@ -1,0 +1,12 @@
+{{define "content"}}
+<div class="login">
+  <h1>PSL Monitor</h1>
+  <form method="post" action="/login{{with .Q.Get "next"}}?next={{.}}{{end}}">
+    <label for="u">Username</label>
+    <input id="u" type="text" name="username" autocomplete="username" required autofocus>
+    <label for="p">Password</label>
+    <input id="p" type="password" name="password" autocomplete="current-password" required>
+    <p><button class="primary" type="submit">Log in</button></p>
+  </form>
+</div>
+{{end}}

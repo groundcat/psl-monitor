@@ -1,0 +1,26 @@
+{{define "content"}}
+{{$d := .Data}}{{$r := $d.Run}}
+<h1>Run #{{$r.ID}} — {{kindLabel $r.Kind}}{{if $r.Scope}} ({{$r.Scope}}){{end}} <span class="st st-{{$r.Status}}">{{$r.Status}}</span></h1>
+<table class="kv">
+  <tr><th>trigger</th><td>{{$r.Trigger}}{{if $r.TriggeredBy}} by {{$r.TriggeredBy}}{{end}}</td></tr>
+  <tr><th>started / finished (UTC)</th><td>{{datetime $r.StartedAt}} / {{datetime $r.FinishedAt}} ({{$r.Duration}})</td></tr>
+  <tr><th>PSL snapshot</th><td>{{if $r.SnapshotID}}<a href="/snapshot/{{$r.SnapshotID}}">#{{$r.SnapshotID}}</a>{{else}}—{{end}}</td></tr>
+  {{if $d.Live}}
+  <tr data-live-runs="1" data-run="{{$r.ID}}"><th>progress</th><td><progress max="{{$d.Live.Total}}" value="{{$d.Live.Done}}"></progress> <span data-f="count">{{$d.Live.Done}}/{{$d.Live.Total}}</span> · errors <span data-f="errors">{{$d.Live.Errors}}</span> · <span data-f="phase">{{$d.Live.Phase}}</span> · <span data-f="elapsed"></span>
+    <form method="post" action="/run/{{$r.ID}}/cancel" class="inline" data-confirm="Cancel this run?"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">cancel</button></form></td></tr>
+  {{else}}
+  <tr><th>processed</th><td>{{$r.Done}}/{{$r.Total}}, {{$r.Errors}} errors</td></tr>
+  {{end}}
+  <tr><th>summary</th><td class="wrap">{{$r.Summary}}</td></tr>
+  <tr><th>compare</th><td>{{if $d.HasPrev}}<a href="/run/{{$r.ID}}/diff">diff against previous comparable run #{{$d.Prev.ID}} ({{datetime $d.Prev.StartedAt}})</a>{{else}}<span class="muted">no previous comparable run</span>{{end}}
+    <form method="get" action="/run/{{$r.ID}}/diff" class="inline"> · against run # <input type="number" name="against" style="width:6em"> <button>diff</button></form></td></tr>
+</table>
+
+<h2>Events in this run ({{$d.EvTotal}})</h2>
+{{template "eventtable" $d.Events}}
+{{if gt $d.EvTotal (len $d.Events)}}<p class="muted">showing first {{len $d.Events}}</p>{{end}}
+
+<h2>Log</h2>
+<pre class="log">{{range $d.Logs}}<span class="{{.Level}}">{{datetime .TS}} {{.Level}} {{.Msg}}</span>
+{{else}}(no log lines){{end}}</pre>
+{{end}}

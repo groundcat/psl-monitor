@@ -1,0 +1,6 @@
+.git
+.env
+data/
+*.db
+*.db-*
+/pslmon

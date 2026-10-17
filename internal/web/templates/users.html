@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1>Admin users</h1>
+<p class="muted">All users are administrators. Disabling or deleting a user revokes their sessions. The last active admin cannot be disabled or deleted.</p>
+<table class="compact">
+  <tr><th>username</th><th>email</th><th>reports</th><th>active</th><th>created</th><th>last login</th><th>actions</th></tr>
+  {{range .Data}}
+  <tr>
+    <td>{{.Username}}{{if eq .ID $.User.ID}} <span class="tag">you</span>{{end}}</td>
+    <td>{{or .Email "—"}}</td>
+    <td>{{if .ReceiveReports}}yes{{else}}no{{end}}</td>
+    <td>{{if .Active}}yes{{else}}<span class="st-missing">disabled</span>{{end}}</td>
+    <td class="nowrap">{{date .CreatedAt}}</td>
+    <td class="nowrap">{{datetime .LastLogin}}</td>
+    <td class="nowrap">
+      {{if ne .ID $.User.ID}}
+      <form method="post" action="/users/{{.ID}}/toggle" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>{{if .Active}}disable{{else}}enable{{end}}</button></form>
+      <form method="post" action="/users/{{.ID}}/delete" class="inline" data-confirm="Delete user {{.Username}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">delete</button></form>
+      <form method="post" action="/users/{{.ID}}/password" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="password" name="password" placeholder="new password" minlength="10" size="14" autocomplete="new-password"><button>reset pw</button></form>
+      {{else}}<a href="/account">edit my account</a>{{end}}
+    </td>
+  </tr>
+  {{end}}
+</table>
+
+<h2>Add admin</h2>
+<form method="post" action="/users" class="filters">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>username <input type="text" name="username" required></label>
+  <label>email (optional) <input type="email" name="email"></label>
+  <label>password (min 10) <input type="password" name="password" required minlength="10" autocomplete="new-password"></label>
+  <button class="primary">create</button>
+</form>
+{{end}}
