@@ -90,7 +90,12 @@ func (p *Parking) Load(list string, keywords []string) {
 }
 
 // Match returns the NS hosts that look like parking.
-func (p *Parking) Match(ns []string) []string {
+func (p *Parking) Match(ns []string) []string { return p.MatchFor("", ns) }
+
+// MatchFor is Match, but keyword matching ignores the part of an NS host that
+// is the target itself or its TLD (e.g. v0n0.nic.forsale for the .forsale TLD,
+// or ns1.parking-example.com serving parking-example.com).
+func (p *Parking) MatchFor(target string, ns []string) []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	var out []string
@@ -118,8 +123,17 @@ func (p *Parking) Match(ns []string) []string {
 		if allowed {
 			continue
 		}
+		kh := h
+		if target != "" {
+			tld := target[strings.LastIndexByte(target, '.')+1:]
+			if strings.HasSuffix(kh, "."+target) || kh == target {
+				kh = strings.TrimSuffix(kh, target)
+			} else if strings.HasSuffix(kh, "."+tld) {
+				kh = strings.TrimSuffix(kh, tld)
+			}
+		}
 		for _, k := range p.keywords {
-			if strings.Contains(h, k) {
+			if strings.Contains(kh, k) {
 				out = append(out, h)
 				break
 			}

@@ -71,8 +71,16 @@ func Apply(s *NSState, o Observation, grace int) *Event {
 	day := o.At.UTC().Format("2006-01-02")
 	newDay := day != s.LastDay
 	prev := s.State
-	s.LastStatus = o.Status
 	s.Inconsistent = o.Inconsistent
+
+	// A delegation "appearing" for a long-undelegated name must be unanimous;
+	// a single disagreeing resolver is treated as inconclusive.
+	if o.Status == dnscheck.StatusOK && len(s.Baseline) == 0 && s.NegDays >= appearedMinNegDays && o.Inconsistent {
+		s.LastStatus = o.Status
+		o.Status = dnscheck.StatusError
+	} else {
+		s.LastStatus = o.Status
+	}
 
 	switch {
 	case o.Status == dnscheck.StatusOK:

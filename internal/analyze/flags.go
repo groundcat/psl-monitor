@@ -41,6 +41,7 @@ const (
 	FlagChanging        = "ns_changing"      // NS fully replaced, within grace period
 	FlagParked          = "parked"           // current NS looks like a parking/expiry service
 	FlagAppeared        = "ns_appeared"      // previously undelegated name now delegated
+	FlagNeverResolved   = "never_resolved"   // private: no NS since monitoring began
 	FlagExpiringSoon    = "expiring_soon"    // RDAP expiry within 30 days
 	FlagExpiring90      = "expiring_90d"     // RDAP expiry within 90 days
 	FlagShortTerm       = "short_term"       // private: expiry < 1 year away (PSL requires >1y)
@@ -51,7 +52,7 @@ const (
 
 // FlagTypes is the ordered list for UI filters.
 var FlagTypes = []string{FlagExpired, FlagDropped, FlagRDAPVanished, FlagReRegistered, FlagPendingDelete, FlagHold,
-	FlagDefunct, FlagNSMissing, FlagChanged, FlagChanging, FlagParked, FlagAppeared,
+	FlagDefunct, FlagNSMissing, FlagNeverResolved, FlagChanged, FlagChanging, FlagParked, FlagAppeared,
 	FlagExpiringSoon, FlagExpiring90, FlagShortTerm, FlagNewlyRegistered, FlagTXTMissing, FlagInconsistent}
 
 // FlagHelp describes each flag for the UI.
@@ -67,7 +68,8 @@ var FlagHelp = map[string]string{
 	FlagChanged:         "NS set is completely disjoint from baseline for the full grace period (possible change of hands)",
 	FlagChanging:        "NS set is disjoint from baseline; inside grace period",
 	FlagParked:          "NS hostnames match known parking / expiry nameservers or keywords",
-	FlagAppeared:        "Name had no delegation for the grace period and is now delegated",
+	FlagAppeared:        "Name was observed undelegated on several days and is now delegated",
+	FlagNeverResolved:   "Private registrable domain has had no NS records since monitoring began (broken before tracking started)",
 	FlagExpiringSoon:    "RDAP expiration within 30 days",
 	FlagExpiring90:      "RDAP expiration within 90 days",
 	FlagShortTerm:       "Private entry with less than 1 year of registration left (PSL expects >1 year)",
@@ -202,6 +204,19 @@ func Evaluate(in Input) []Flag {
 		add(FlagChanged, sev, conf, "NS replaced for %d days: %s -> %s", d.ChangedDays, strings.Join(d.Baseline, ","), strings.Join(d.Current, ","))
 	case DNSChanging:
 		add(FlagChanging, SevLow, ConfLow, "NS disjoint from baseline for %d/%d days: now %s", d.ChangedDays, in.Grace, strings.Join(d.Current, ","))
+	case DNSNoNS:
+		if priv && d.NegDays > 0 {
+			switch {
+			case rdapGone:
+				// expired / dropped flags already carry the severity
+			case d.NegDays >= in.Grace && rdapHealthy:
+				add(FlagNeverResolved, SevMedium, ConfHigh, "no NS on %d check days (%s) but registration is active: broken delegation", d.NegDays, d.LastStatus)
+			case d.NegDays >= in.Grace:
+				add(FlagNeverResolved, SevHigh, ConfMedium, "no NS on %d check days (%s); RDAP unavailable, possibly expired", d.NegDays, d.LastStatus)
+			default:
+				add(FlagNeverResolved, SevLow, ConfLow, "no NS on %d/%d check days (%s)", d.NegDays, in.Grace, d.LastStatus)
+			}
+		}
 	case DNSAppeared:
 		sev := SevMedium
 		if !priv {

@@ -195,3 +195,48 @@ func TestParking(t *testing.T) {
 		}
 	}
 }
+
+func TestNeverResolvedPrivate(t *testing.T) {
+	now := day(0)
+	d := NSState{State: DNSNoNS, NegDays: 1, LastStatus: "nxdomain"}
+	f := Evaluate(Input{Section: "private", DNS: d, Grace: 5, Now: now})
+	if len(f) != 1 || f[0].Type != FlagNeverResolved || f[0].Severity != SevLow {
+		t.Fatalf("%+v", f)
+	}
+	d.NegDays = 5
+	f = Evaluate(Input{Section: "private", DNS: d, RDAP: RDAPInfo{Result: "found", Expires: day(7), Created: day(-4000)}, Grace: 5, Now: now})
+	if f[0].Type != FlagExpiringSoon || f[1].Type != FlagNeverResolved || f[1].Severity != SevMedium {
+		t.Fatalf("%+v", f)
+	}
+	// ICANN labels without delegation are normal
+	if f := Evaluate(Input{Section: "icann", DNS: d, Grace: 5, Now: now}); len(f) != 0 {
+		t.Fatalf("%+v", f)
+	}
+}
+
+func TestAppearedRequiresConsistency(t *testing.T) {
+	s := &NSState{}
+	Apply(s, neg(0, dnscheck.StatusNXDomain), 5)
+	Apply(s, neg(1, dnscheck.StatusNXDomain), 5)
+	Apply(s, Observation{Status: dnscheck.StatusOK, Records: []string{"x"}, Inconsistent: true, At: day(2)}, 5)
+	if s.State != DNSNoNS || len(s.Baseline) != 0 {
+		t.Fatalf("inconsistent positive should not create appearance: %+v", s)
+	}
+	Apply(s, ok(3, "x"), 5)
+	if s.State != DNSAppeared {
+		t.Fatal(s.State)
+	}
+}
+
+func TestParkingOwnName(t *testing.T) {
+	p := NewParking(DefaultParkingNS, DefaultParkingKeywords)
+	if got := p.MatchFor("forsale", []string{"v0n0.nic.forsale"}); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := p.MatchFor("parkit.example", []string{"ns1.parkit.example"}); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := p.MatchFor("foo.com", []string{"ns1.dns-parking.com"}); len(got) != 1 {
+		t.Fatal(got)
+	}
+}

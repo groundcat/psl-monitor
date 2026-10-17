@@ -569,7 +569,7 @@ func (r *run) dnsPhase(ctx context.Context, ts []*store.Target, autoRDAP bool) e
 		t.DNSDetail = lk.Summary()
 		t.DNSCheckedAt = now
 		if lk.Status == dnscheck.StatusOK {
-			t.ParkedNS = r.c.Parking.Match(lk.Records)
+			t.ParkedNS = r.c.Parking.MatchFor(t.Name, lk.Records)
 		} else if dnscheck.IsMissing(lk.Status) {
 			t.ParkedNS = nil
 		}
@@ -611,8 +611,9 @@ func (r *run) dnsPhase(ctx context.Context, ts []*store.Target, autoRDAP bool) e
 
 // needsRDAPConfirm decides whether a DNS anomaly warrants an RDAP lookup.
 func needsRDAPConfirm(t *store.Target, prevState string, cfg Config) bool {
+	neverResolved := t.Section == psl.SectionPrivate && t.DNS.State == analyze.DNSNoNS
 	anomalous := t.DNS.State == analyze.DNSDefunct || t.DNS.State == analyze.DNSChanged || t.DNS.State == analyze.DNSAppeared ||
-		len(t.ParkedNS) > 0 || t.DNS.State == analyze.DNSMissing || t.DNS.State == analyze.DNSChanging
+		len(t.ParkedNS) > 0 || t.DNS.State == analyze.DNSMissing || t.DNS.State == analyze.DNSChanging || neverResolved
 	if !anomalous {
 		return false
 	}
@@ -636,13 +637,12 @@ func (r *run) rdapPhase(ctx context.Context, ts []*store.Target, sub bool) error
 	txtMissing := r.c.Store.TXTMissingByTarget()
 	txtChecked := r.c.Store.TXTCheckedByTarget()
 	w := newWriter(r.c.Store, r.logf)
-	// Interleave servers so a slow registry doesn't serialize the queue.
-	ts = interleaveByServer(ts, r.rdap)
-	dnscheck.Runner(ctx, cfg.RDAPWorkers, ts, func(ctx context.Context, t *store.Target) {
+
+	lookupOne := func(ctx context.Context, t *store.Target) {
 		defer r.rs.done.Add(1)
-		tctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		defer cancel()
-		d := r.rdap.Lookup(tctx, t.Name)
+		// No overall deadline: waiting in a server's queue is not a failure.
+		// Each HTTP attempt has its own timeout inside the client.
+		d := r.rdap.Lookup(ctx, t.Name)
 		if ctx.Err() != nil {
 			return
 		}
@@ -665,7 +665,29 @@ func (r *run) rdapPhase(ctx context.Context, ts []*store.Target, sub bool) error
 			}
 			return r.recordResult(tx, &tt)
 		})
-	})
+	}
+
+	// One small worker pool per RDAP server: a slow or throttling registry
+	// only delays its own domains and never starves the others. A global
+	// gate still bounds total concurrency to RDAPWorkers.
+	gate := make(chan struct{}, max(cfg.RDAPWorkers, 1))
+	var wg sync.WaitGroup
+	for _, g := range groupByServer(ts, r.rdap) {
+		wg.Add(1)
+		go func(g []*store.Target) {
+			defer wg.Done()
+			dnscheck.Runner(ctx, r.rdap.PerHostConc(), g, func(ctx context.Context, t *store.Target) {
+				select {
+				case gate <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+				defer func() { <-gate }()
+				lookupOne(ctx, t)
+			})
+		}(g)
+	}
+	wg.Wait()
 	if err := w.close(); err != nil {
 		return err
 	}
@@ -737,25 +759,18 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 	return evs
 }
 
-func interleaveByServer(ts []*store.Target, c *rdap.Client) []*store.Target {
-	groups := map[string][]*store.Target{}
-	var keys []string
+func groupByServer(ts []*store.Target, c *rdap.Client) [][]*store.Target {
+	idx := map[string]int{}
+	var out [][]*store.Target
 	for _, t := range ts {
 		s := c.ServerFor(t.Name)
-		if _, ok := groups[s]; !ok {
-			keys = append(keys, s)
+		i, ok := idx[s]
+		if !ok {
+			i = len(out)
+			idx[s] = i
+			out = append(out, nil)
 		}
-		groups[s] = append(groups[s], t)
-	}
-	sort.Strings(keys)
-	out := make([]*store.Target, 0, len(ts))
-	for len(out) < len(ts) {
-		for _, k := range keys {
-			if g := groups[k]; len(g) > 0 {
-				out = append(out, g[0])
-				groups[k] = g[1:]
-			}
-		}
+		out[i] = append(out[i], t)
 	}
 	return out
 }

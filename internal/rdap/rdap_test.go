@@ -62,6 +62,7 @@ func TestLookupStatuses(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := New(Options{Overrides: map[string]string{"test": srv.URL}, PerHostQPS: 100})
+	c.minQPS = 50
 	ctx := context.Background()
 	if d := c.Lookup(ctx, "ok.test"); d.Result != ResultFound || d.Expires.Year() != 2030 {
 		t.Fatalf("%+v", d)
@@ -77,5 +78,30 @@ func TestLookupStatuses(t *testing.T) {
 	defer cancel()
 	if d := c.Lookup(ctx2, "broken.test"); d.Result != ResultError {
 		t.Fatalf("%+v", d)
+	}
+}
+
+func TestThrottleAdapts(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1)%2 == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(429)
+			return
+		}
+		fmt.Fprint(w, `{"objectClassName":"domain","entities":[{"roles":"registrar"}],"status":"active"}`)
+	}))
+	defer srv.Close()
+	c := New(Options{Overrides: map[string]string{"test": srv.URL}, PerHostQPS: 50})
+	c.minQPS = 20
+	for i := 0; i < 10; i++ {
+		d := c.Lookup(context.Background(), fmt.Sprintf("d%d.test", i))
+		if d.Result != ResultFound {
+			t.Fatalf("%d: %+v", i, d)
+		}
+	}
+	st := c.Stats()
+	if len(st) != 1 || st[0].CircuitOpen || st[0].Throttled < 5 {
+		t.Fatalf("%+v", st)
 	}
 }

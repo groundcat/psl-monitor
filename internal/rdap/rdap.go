@@ -54,6 +54,9 @@ type Domain struct {
 type hostState struct {
 	sem        chan struct{}
 	lim        *rate.Limiter
+	baseQPS    float64
+	minQPS     float64
+	okStreak   int
 	mu         sync.Mutex
 	consecFail int
 	openUntil  time.Time
@@ -78,6 +81,7 @@ type Client struct {
 	hosts       sync.Map // host -> *hostState
 	perHostConc int
 	perHostQPS  float64
+	minQPS      float64 // floor for adaptive throttling
 	UserAgent   string
 }
 
@@ -114,6 +118,7 @@ func New(o Options) *Client {
 		overrides:   map[string]string{},
 		perHostConc: o.PerHostConc,
 		perHostQPS:  o.PerHostQPS,
+		minQPS:      0.2,
 		UserAgent:   "psl-monitor/1.0 (+https://publicsuffix.org)",
 	}
 	_ = c.LoadBootstrap(embeddedBootstrap)
@@ -197,6 +202,9 @@ func (c *Client) SetOverrides(o map[string]string) {
 	c.mu.Unlock()
 }
 
+// PerHostConc returns the per-server concurrency limit.
+func (c *Client) PerHostConc() int { return c.perHostConc }
+
 // TLDCount returns the number of TLDs with a known server.
 func (c *Client) TLDCount() int {
 	c.mu.RLock()
@@ -234,7 +242,7 @@ func (c *Client) host(base string) *hostState {
 	if v, ok := c.hosts.Load(h); ok {
 		return v.(*hostState)
 	}
-	hs := &hostState{sem: make(chan struct{}, c.perHostConc), lim: rate.NewLimiter(rate.Limit(c.perHostQPS), 1)}
+	hs := &hostState{sem: make(chan struct{}, c.perHostConc), lim: rate.NewLimiter(rate.Limit(c.perHostQPS), 1), baseQPS: c.perHostQPS, minQPS: c.minQPS}
 	v, _ := c.hosts.LoadOrStore(h, hs)
 	return v.(*hostState)
 }
@@ -279,7 +287,7 @@ func (c *Client) Lookup(ctx context.Context, domain string) *Domain {
 	hs := c.host(base)
 	defer func() { d.Elapsed = time.Since(start) }()
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < 4; attempt++ {
 		hs.mu.Lock()
 		open := hs.openUntil.After(time.Now())
 		hs.mu.Unlock()
@@ -313,7 +321,7 @@ func (c *Client) Lookup(ctx context.Context, domain string) *Domain {
 		if retryAfter <= 0 {
 			retryAfter = time.Duration(attempt+1) * 2 * time.Second
 		}
-		if retryAfter > 30*time.Second {
+		if retryAfter > 60*time.Second {
 			// don't let a single server stall the run
 			return d
 		}
@@ -339,7 +347,7 @@ func (c *Client) do(ctx context.Context, base, domain string, d *Domain, hs *hos
 	hs.requests++
 	hs.mu.Unlock()
 	if err != nil {
-		c.fail(hs, false)
+		c.fail(hs)
 		return 0, false, err
 	}
 	defer resp.Body.Close()
@@ -351,11 +359,15 @@ func (c *Client) do(ctx context.Context, base, domain string, d *Domain, hs *hos
 		d.Result = ResultNotFound
 		return 0, true, nil
 	case resp.StatusCode == 429 || resp.StatusCode == 503:
-		c.fail(hs, true)
-		ra := parseRetryAfter(resp.Header.Get("Retry-After"))
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		c.throttle(hs)
+		ra := 5 * time.Second
+		if h := resp.Header.Get("Retry-After"); h != "" {
+			ra = max(parseRetryAfter(h), 50*time.Millisecond)
+		}
 		return ra, false, fmt.Errorf("HTTP %d (throttled)", resp.StatusCode)
 	case resp.StatusCode >= 400:
-		c.fail(hs, false)
+		c.fail(hs)
 		if resp.StatusCode == 400 || resp.StatusCode == 403 || resp.StatusCode == 422 || resp.StatusCode == 501 {
 			// not retryable
 			d.Result, d.Err = ResultError, fmt.Sprintf("HTTP %d", resp.StatusCode)
@@ -365,11 +377,11 @@ func (c *Client) do(ctx context.Context, base, domain string, d *Domain, hs *hos
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		c.fail(hs, false)
+		c.fail(hs)
 		return 0, false, err
 	}
 	if err := parseDomain(b, d); err != nil {
-		c.fail(hs, false)
+		c.fail(hs)
 		d.Result, d.Err = ResultError, "parse: "+err.Error()
 		return 0, true, nil
 	}
@@ -381,19 +393,35 @@ func (c *Client) do(ctx context.Context, base, domain string, d *Domain, hs *hos
 func (c *Client) ok(hs *hostState) {
 	hs.mu.Lock()
 	hs.consecFail = 0
+	hs.okStreak++
+	if cur := float64(hs.lim.Limit()); cur < hs.baseQPS && hs.okStreak >= 20 {
+		hs.lim.SetLimit(rate.Limit(min(cur*1.25, hs.baseQPS)))
+		hs.okStreak = 0
+	}
 	hs.mu.Unlock()
 }
 
-func (c *Client) fail(hs *hostState, throttled bool) {
+// throttle halves the host's request rate (min 0.2 req/s) after a 429/503.
+// Throttling never opens the circuit: the server is alive, just busy.
+func (c *Client) throttle(hs *hostState) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.failures++
-	if throttled {
-		hs.throttled++
-	}
+	hs.throttled++
+	hs.okStreak = 0
+	hs.lim.SetLimit(rate.Limit(max(float64(hs.lim.Limit())/2, hs.minQPS)))
+}
+
+// fail records a hard failure (connection error, 5xx, bad payload). After
+// repeated consecutive hard failures the circuit opens for a short while.
+func (c *Client) fail(hs *hostState) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.failures++
+	hs.okStreak = 0
 	hs.consecFail++
-	if hs.consecFail >= 6 {
-		hs.openUntil = time.Now().Add(5 * time.Minute)
+	if hs.consecFail >= 8 {
+		hs.openUntil = time.Now().Add(2 * time.Minute)
 		hs.consecFail = 0
 	}
 }
@@ -412,9 +440,9 @@ func parseRetryAfter(v string) time.Duration {
 }
 
 type rdapDoc struct {
-	ObjectClassName string   `json:"objectClassName"`
-	LDHName         string   `json:"ldhName"`
-	Status          []string `json:"status"`
+	ObjectClassName string         `json:"objectClassName"`
+	LDHName         string         `json:"ldhName"`
+	Status          lenientStrings `json:"status"`
 	Events          []struct {
 		Action string `json:"eventAction"`
 		Date   string `json:"eventDate"`
@@ -423,10 +451,29 @@ type rdapDoc struct {
 		LDHName string `json:"ldhName"`
 	} `json:"nameservers"`
 	Entities []struct {
-		Roles      []string        `json:"roles"`
+		Roles      lenientStrings  `json:"roles"`
 		VCardArray json.RawMessage `json:"vcardArray"`
 	} `json:"entities"`
 	ErrorCode int `json:"errorCode"`
+}
+
+// lenientStrings accepts either a JSON string or an array of strings
+// (some registries deviate from RFC 9083).
+type lenientStrings []string
+
+func (l *lenientStrings) UnmarshalJSON(b []byte) error {
+	var arr []string
+	if err := json.Unmarshal(b, &arr); err == nil {
+		*l = arr
+		return nil
+	}
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*l = []string{one}
+		return nil
+	}
+	*l = nil
+	return nil
 }
 
 func parseDomain(b []byte, d *Domain) error {
@@ -452,7 +499,7 @@ func parseDomain(b []byte, d *Domain) error {
 			d.LastChanged = t
 		}
 	}
-	d.Statuses = doc.Status
+	d.Statuses = []string(doc.Status)
 	for _, n := range doc.Nameservers {
 		if n.LDHName != "" {
 			d.Nameservers = append(d.Nameservers, strings.ToLower(strings.TrimSuffix(n.LDHName, ".")))
