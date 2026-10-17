@@ -133,8 +133,13 @@ func Evaluate(in Input) []Flag {
 		rdapExpired = true
 		days := int(now.Sub(r.Expires).Hours() / 24)
 		sev := SevHigh
-		if dnsBad || dnsChanged || len(in.ParkedNS) > 0 {
+		switch {
+		case dnsBad || dnsChanged || len(in.ParkedNS) > 0:
 			sev = SevCritical
+		case !priv && d.State == DNSNoNS:
+			// registry placeholder object for a label that isn't delegated: stale
+			// registry data, worth a look but not alarming
+			sev = SevMedium
 		}
 		add(FlagExpired, sev, ConfConfirmed, "RDAP expiry %s (%d days ago)", r.Expires.Format("2006-01-02"), days)
 	}
@@ -159,7 +164,13 @@ func Evaluate(in Input) []Flag {
 		case strings.Contains(s, "pendingdelete") || strings.Contains(s, "redemptionperiod") || strings.Contains(s, "pendingrestore"):
 			add(FlagPendingDelete, SevCritical, ConfConfirmed, "RDAP status %q", st)
 		case strings.HasSuffix(s, "hold") && (strings.HasPrefix(s, "client") || strings.HasPrefix(s, "server")):
-			add(FlagHold, SevHigh, ConfConfirmed, "RDAP status %q", st)
+			// For ICANN suffixes a registry-reserved, undelegated label on hold is
+			// a common, intentional setup; it only matters if it was delegated before.
+			if priv || d.State == DNSDefunct || d.State == DNSMissing {
+				add(FlagHold, SevHigh, ConfConfirmed, "RDAP status %q", st)
+			} else {
+				add(FlagHold, SevLow, ConfConfirmed, "RDAP status %q (suffix not delegated)", st)
+			}
 		}
 	}
 	if r.Result == "found" && !rdapExpired && !r.Expires.IsZero() {

@@ -910,6 +910,31 @@ type DiffEntry struct {
 	HasA, HasB    bool
 }
 
+func sameResult(ra, rb RunResult, a, b int64, s *Store) bool {
+	ka, kb := s.runKind(a), s.runKind(b)
+	dnsBoth := isDNSKind(ka) && isDNSKind(kb)
+	rdapBoth := isRDAPKind(ka) && isRDAPKind(kb)
+	if dnsBoth && (ra.DNSState != rb.DNSState || ra.NS != rb.NS || ra.DNSStatus != rb.DNSStatus) {
+		return false
+	}
+	if rdapBoth && (ra.RDAPResult != rb.RDAPResult || !ra.RDAPExpires.Equal(rb.RDAPExpires) || !ra.RDAPCreated.Equal(rb.RDAPCreated)) {
+		return false
+	}
+	return stripInfo(ra.FlagTypes) == stripInfo(rb.FlagTypes) && max(ra.Severity, 1) == max(rb.Severity, 1)
+}
+
+// stripInfo drops info-level flags that churn between runs.
+func stripInfo(ft string) string { return strings.Replace(ft, ",inconsistent,", ",", 1) }
+
+func isDNSKind(k string) bool  { return k == "dns_private" || k == "dns_icann" || k == "recheck" }
+func isRDAPKind(k string) bool { return k == "rdap" || k == "recheck" }
+
+func (s *Store) runKind(id int64) string {
+	var k string
+	s.R.QueryRow(`SELECT kind FROM runs WHERE id=?`, id).Scan(&k)
+	return k
+}
+
 // DiffRuns compares per-target results of two runs, returning only changes.
 func (s *Store) DiffRuns(a, b int64, limit int) ([]DiffEntry, int) {
 	load := func(id int64) map[int64]RunResult {
@@ -933,8 +958,9 @@ func (s *Store) DiffRuns(a, b int64, limit int) ([]DiffEntry, int) {
 	var out []DiffEntry
 	for id, rb := range mb {
 		ra, ok := ma[id]
-		if ok && ra.DNSState == rb.DNSState && ra.NS == rb.NS && ra.RDAPResult == rb.RDAPResult && ra.RDAPExpires.Equal(rb.RDAPExpires) &&
-			ra.RDAPCreated.Equal(rb.RDAPCreated) && ra.FlagTypes == rb.FlagTypes && ra.TXTMissing == rb.TXTMissing {
+		// Compare only the aspects both runs actually checked: a DNS run vs
+		// an RDAP run would otherwise differ on every target.
+		if ok && sameResult(ra, rb, a, b, s) {
 			continue
 		}
 		out = append(out, DiffEntry{TargetID: id, A: ra, B: rb, HasA: ok, HasB: true})

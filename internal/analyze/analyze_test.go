@@ -252,3 +252,18 @@ func TestReRegisteredIgnoresSubDay(t *testing.T) {
 		t.Fatalf("%+v", f)
 	}
 }
+
+func TestICANNPlaceholders(t *testing.T) {
+	now := day(0)
+	d := NSState{State: DNSNoNS, NegDays: 3, LastStatus: "nxdomain"}
+	f := Evaluate(Input{Section: "icann", DNS: d, RDAP: RDAPInfo{Result: "found", Expires: day(-900), Statuses: []string{"server hold"}}, Now: now})
+	if MaxSeverity(f) != SevMedium {
+		t.Fatalf("%+v", f)
+	}
+	// a delegated suffix that went defunct with an expired registration is critical
+	d = NSState{State: DNSDefunct, MissingDays: 5, Baseline: []string{"a"}, LastStatus: "nxdomain"}
+	f = Evaluate(Input{Section: "icann", DNS: d, RDAP: RDAPInfo{Result: "found", Expires: day(-3)}, Grace: 5, Now: now})
+	if MaxSeverity(f) != SevCritical {
+		t.Fatalf("%+v", f)
+	}
+}
