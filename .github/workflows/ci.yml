@@ -45,4 +45,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - run: cp .env.example .env
       - run: docker compose build
+      - name: Smoke test (app + whois sidecar)
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            docker compose logs pslmon | grep -q "loaded extra RDAP servers" && break
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs pslmon
+          docker compose logs pslmon | grep -q "whois fallback enabled"
+          docker compose exec -T pslmon pslmon healthcheck
+          docker compose exec -T pslmon wget -qO- "http://whois/src/index.php?json=1&whois=1&domain=jprs.jp" | grep -q '"registered":true'
+      - if: always()
+        run: docker compose down -v
