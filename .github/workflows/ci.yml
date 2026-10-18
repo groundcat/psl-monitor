@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  # Live test of the Go client against the pinned upstream PHP service.
+  whois-fallback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: curl, mbstring, dom, intl
+      - name: Start whois-domain-lookup
+        run: |
+          php -S 127.0.0.1:18090 -t third_party/whois-domain-lookup >/tmp/php.log 2>&1 &
+          sleep 2
+      - name: Live fallback test
+        run: WHOIS_FALLBACK_TEST_URL=http://127.0.0.1:18090 go test ./internal/whoisfb/ -run Live -v
+        continue-on-error: true # depends on third-party WHOIS servers
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: docker compose build

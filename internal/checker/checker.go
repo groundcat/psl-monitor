@@ -21,6 +21,7 @@ import (
 	"psl-monitor/internal/psl"
 	"psl-monitor/internal/rdap"
 	"psl-monitor/internal/store"
+	"psl-monitor/internal/whoisfb"
 )
 
 // Run kinds.
@@ -69,6 +70,7 @@ type Checker struct {
 	Store   *store.Store
 	dnsPool atomic.Pointer[dnscheck.Pool]
 	rdapCl  atomic.Pointer[rdap.Client]
+	whoisFB atomic.Pointer[whoisfb.Client]
 	Parking *analyze.Parking
 	Log     *slog.Logger
 
@@ -103,6 +105,12 @@ func (c *Checker) DNS() *dnscheck.Pool { return c.dnsPool.Load() }
 
 // RDAP returns the current RDAP client.
 func (c *Checker) RDAP() *rdap.Client { return c.rdapCl.Load() }
+
+// WHOIS returns the WHOIS fallback client (nil when disabled).
+func (c *Checker) WHOIS() *whoisfb.Client { return c.whoisFB.Load() }
+
+// SetWHOIS swaps the WHOIS fallback client (nil disables it).
+func (c *Checker) SetWHOIS(w *whoisfb.Client) { c.whoisFB.Store(w) }
 
 // SetRDAP swaps the RDAP client.
 func (c *Checker) SetRDAP(rc *rdap.Client) { c.rdapCl.Store(rc) }
@@ -223,6 +231,9 @@ func (c *Checker) Start(kind, scope, trigger, by string, ids []int64) (int64, er
 			c.mu.Unlock()
 		}()
 		r := &run{c: c, id: id, rs: rs, kind: kind, scope: scope, pool: c.DNS(), rdap: c.RDAP()}
+		if w := c.WHOIS(); w != nil {
+			r.whois = w
+		}
 		c.Store.Log(id, "info", fmt.Sprintf("started %s scope=%q trigger=%s by=%s", kind, scope, trigger, by))
 		c.Log.Info("run started", "run", id, "kind", kind, "scope", scope, "trigger", trigger)
 		err := r.exec(ctx, ids)
@@ -254,6 +265,7 @@ type run struct {
 	scope    string
 	pool     *dnscheck.Pool
 	rdap     *rdap.Client
+	whois    Fallback
 	snapshot int64
 	statsMu  sync.Mutex
 	stats    map[string]int
@@ -618,6 +630,7 @@ func needsRDAPConfirm(t *store.Target, prevState string, cfg Config) bool {
 	if !anomalous {
 		return false
 	}
+	// neither RDAP nor WHOIS is available for this TLD: don't re-ask too often
 	if t.RDAP.Result == rdap.ResultUnsupported && time.Since(t.RDAP.CheckedAt) < 7*24*time.Hour {
 		return false
 	}
@@ -643,11 +656,14 @@ func (r *run) rdapPhase(ctx context.Context, ts []*store.Target, sub bool) error
 		defer r.rs.done.Add(1)
 		// No overall deadline: waiting in a server's queue is not a failure.
 		// Each HTTP attempt has its own timeout inside the client.
-		d := r.rdap.Lookup(ctx, t.Name)
+		d := lookupRegistration(ctx, r.rdap, r.whois, t.Name)
 		if ctx.Err() != nil {
 			return
 		}
 		r.stat("rdap_"+d.Result, 1)
+		if d.Source != "" && d.Source != "rdap" {
+			r.stat("src_"+strings.ReplaceAll(d.Source, "+", "_"), 1)
+		}
 		evs := applyRDAP(t, d)
 		if d.Result == rdap.ResultError {
 			r.rs.errs.Add(1)
@@ -732,6 +748,7 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 		t.RDAPNS = d.Nameservers
 		t.RDAPError = ""
 		t.RDAPServer = d.Server
+		t.RDAPSource = d.Source
 		t.RDAP.CheckedAt = now
 	case rdap.ResultNotFound:
 		if prev.Result == rdap.ResultFound {
@@ -741,13 +758,14 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 		t.RDAP.Statuses = nil
 		t.RDAPError = ""
 		t.RDAPServer = d.Server
+		t.RDAPSource = d.Source
 		t.RDAP.CheckedAt = now
 	case rdap.ResultUnsupported:
 		if prev.Result == "" || prev.Result == rdap.ResultError {
 			t.RDAP.Result = d.Result
 		}
 		t.RDAP.CheckedAt = now
-		t.RDAPError = "no RDAP server for TLD"
+		t.RDAPError = orDefault(d.Err, "no RDAP server for TLD")
 	case rdap.ResultError:
 		// keep previous cached data; only record the error
 		if prev.Result == "" {
@@ -760,6 +778,13 @@ func applyRDAP(t *store.Target, d *rdap.Domain) [][4]string {
 		}
 	}
 	return evs
+}
+
+func orDefault(s, d string) string {
+	if s == "" {
+		return d
+	}
+	return s
 }
 
 func sameDay(a, b time.Time) bool {

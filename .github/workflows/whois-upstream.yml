@@ -1,0 +1,45 @@
+# Weekly: if reg233/whois-domain-lookup has new commits, open a PR that moves
+# the submodule pin. CI on the PR runs the fallback tests before you merge.
+name: Update whois-domain-lookup
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Move pin to upstream main
+        id: bump
+        run: |
+          before=$(git -C third_party/whois-domain-lookup rev-parse --short HEAD)
+          git submodule update --remote third_party/whois-domain-lookup
+          after=$(git -C third_party/whois-domain-lookup rev-parse --short HEAD)
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          {
+            echo 'log<<EOF'
+            git -C third_party/whois-domain-lookup log --oneline "$before..$after" | head -50
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - uses: peter-evans/create-pull-request@v7
+        if: steps.bump.outputs.before != steps.bump.outputs.after
+        with:
+          branch: deps/whois-domain-lookup
+          commit-message: "Update whois-domain-lookup to ${{ steps.bump.outputs.after }}"
+          title: "Update whois-domain-lookup ${{ steps.bump.outputs.before }} → ${{ steps.bump.outputs.after }}"
+          body: |
+            Upstream changes:
+            ```
+            ${{ steps.bump.outputs.log }}
+            ```
+            After merging, deploy with `make deploy` (or `git pull && git submodule update --init && docker compose up -d --build`).

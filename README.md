@@ -10,10 +10,15 @@ Single Go binary, SQLite database file, no external services besides public DNS 
 ## Quick start (Docker)
 
 ```sh
+git clone --recurse-submodules https://github.com/groundcat/psl-monitor.git
+cd psl-monitor
 cp .env.example .env        # set ADMIN_USERNAME / ADMIN_PASSWORD and SMTP_*
-docker compose up -d --build
+docker compose up -d --build   # or: make up
 open http://localhost:8080
 ```
+
+Already cloned without `--recurse-submodules`? Run `git submodule update --init` (or `make whois-init`).
+This fetches the WHOIS fallback.
 
 The database lives in the `pslmon-data` volume (`/data/pslmon.db`) and survives container
 rebuilds. If no admin is configured in `.env`, the first visit shows a setup page.
@@ -61,11 +66,12 @@ stored whenever the content changes.
   * running a check twice on the same day does not advance the counters
 * **Parking detection**: NS hosts are matched against the community parking-NS list, their parent
   domains, and keywords (`park`, `expired`, `renew`, …). All three are editable in Settings.
-* **RDAP** (IANA bootstrap, refreshed daily; TLDs go through `rdap.iana.org`): creation and expiry
+* **RDAP** (IANA bootstrap, refreshed daily, plus the community extra-servers list; TLDs go through `rdap.iana.org`): creation and expiry
   dates are cached on every lookup, and errors never overwrite cached data. A changed creation date
   means the domain was **re-registered**. Each RDAP server gets its own worker pool with adaptive
   throttling (honours `Retry-After`, halves its rate on 429), so a slow registry never holds up the
-  others. ccTLDs without RDAP show as `unsupported`; add `tld=https://…/` overrides in Settings.
+  others. When RDAP is unavailable, the WHOIS fallback takes over; only TLDs with neither show as `unsupported`.
+* **WHOIS / web-WHOIS fallback**: see [below](#whois-fallback).
 * **`_psl` TXT**: `_psl.<rule>` (wildcards: the name below `*.`) must contain a PR link. Rules in the
   upstream `missingTXT` exemption list (embedded; can be refreshed from GitHub on the TXT page) are
   grandfathered.
@@ -81,6 +87,60 @@ stored whenever the content changes.
 | **info** | resolvers disagreed |
 
 Each finding also carries a confidence (`confirmed` / `high` / `medium` / `low`). See the in-app **Help** page.
+
+## WHOIS fallback
+
+RDAP is always tried first. Many ccTLDs have no RDAP, and some registries' RDAP servers time out
+or omit the expiry date. For those cases the app falls back to
+[reg233/whois-domain-lookup](https://github.com/reg233/whois-domain-lookup), a PHP project
+with maintained WHOIS server lists, **web-based WHOIS scrapers** for registries without port-43
+access, and per-ccTLD parsers.
+
+| RDAP answer | What happens |
+|---|---|
+| found, with expiry | RDAP only |
+| found, **no expiry** (e.g. `.at`, `.eu`) | WHOIS fills in expiry/creation; source `rdap+whois` |
+| **no server** for the TLD | WHOIS answer is used; source `whois` |
+| **error / timeout** | WHOIS answer is used; source `whois` |
+| not found (404) | authoritative: WHOIS is not consulted |
+
+On startup the app also loads the upstream's `rdap-servers-extra.json` (RDAP servers missing from
+the IANA bootstrap, e.g. `.ch`, `.de`, `.co`, and deeper suffixes such as `br.com`), so more domains
+get proper RDAP before WHOIS is needed at all. Manual overrides in Settings take precedence.
+
+The data source of every cached record is shown on the target page and in tables. You can filter on
+it in advanced search (*registration source*). Errors from the fallback never overwrite good cached data.
+
+**How it is integrated**
+
+* The upstream repo is a **git submodule** at `third_party/whois-domain-lookup`, pinned to a commit
+  and tracking `main`. The PHP code is used as-is, with no fork and no patches.
+* `docker compose` builds it into an internal sidecar (`whois`, image `psl-monitor-whois`,
+  Dockerfile in `docker/whois/`). It is not published on the host. The Go app calls its JSON API
+  (`/src/index.php?domain=…&whois=1&json=1`) through `internal/whoisfb`, with per-TLD concurrency and
+  rate limits (WHOIS servers ban aggressive clients) and retries only on transient errors.
+* Configure it with `WHOIS_FALLBACK_URL` (set automatically by compose), the optional
+  `WHOIS_FALLBACK_PASSWORD` (upstream `SITE_PASSWORD`, sent as a SHA-256 bearer token) and
+  `WHOIS_USER_AGENT`. You can disable it or tune it on the Settings page. The Workers page shows its
+  status, upstream version and counters.
+
+**Updating the upstream**
+
+```sh
+make whois-status          # pinned vs. latest upstream commit + changelog
+make whois-update          # move the pin to upstream main (review, then commit)
+make whois-update-commit   # same, and commit
+docker compose up -d --build whois
+```
+
+When deploying, `make deploy` runs `git pull`, syncs the submodule to the **committed** pin, and
+rebuilds. Production therefore runs exactly the reviewed upstream version, never an untested `main`.
+A weekly GitHub Action (`.github/workflows/whois-upstream.yml`) opens a PR whenever upstream has new
+commits, and CI runs a live fallback test against the pinned PHP code.
+
+Without Docker (development): run the submodule with any PHP ≥ 8.1 (curl, mbstring, dom, intl), for example
+`php -S 127.0.0.1:18090 -t third_party/whois-domain-lookup`, and set
+`WHOIS_FALLBACK_URL=http://127.0.0.1:18090`.
 
 ## UI
 
@@ -114,7 +174,7 @@ On a single host with default settings:
 | DNS check, private | 2,138 domains | ~25 s |
 | DNS check, ICANN | 6,949 suffixes | ~1.5 min |
 | `_psl` TXT scan | 3,450 rules | ~1 min |
-| RDAP scan, private | 2,138 domains | ~4 min (paced by per-registry limits) |
+| RDAP scan, private | 2,138 domains | ~4 min RDAP only; ~7 min with WHOIS fallback (≈640 domains via WHOIS) |
 | RDAP scan, ICANN | 6,949 suffixes | ~15 min (`.no`/`.pl` registries throttle) |
 
 Results are written in batches by a single writer goroutine, and readers use a separate WAL connection
@@ -130,6 +190,6 @@ DB_PATH=./data/dev.db ADMIN_USERNAME=admin ADMIN_PASSWORD=admin-pass-123 go run 
 ```
 
 Layout: `internal/psl` (parser), `internal/dnscheck` (resolver pool), `internal/rdap`,
-`internal/compliance` (`_psl` TXT / exemptions), `internal/analyze` (state machine and flag
+`internal/compliance` (`_psl` TXT / exemptions), `internal/whoisfb` (WHOIS fallback client), `internal/analyze` (state machine and flag
 evaluation, pure logic), `internal/checker` (scan orchestration), `internal/scheduler`,
 `internal/store` (SQLite), `internal/web` (UI), `internal/report` + `internal/mailer`.

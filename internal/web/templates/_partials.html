@@ -27,7 +27,7 @@
     <td class="small wrap">{{join .DNS.Current " "}}{{if .ParkedNS}} <span class="tag">parked</span>{{end}}</td>
     <td class="nowrap">{{date .RDAP.Created}}</td>
     <td class="nowrap">{{date .RDAP.Expires}}{{if not (isZero .RDAP.Expires)}}<div class="muted small">{{days .RDAP.Expires}}d</div>{{end}}</td>
-    <td><span class="st st-{{.RDAP.Result}}">{{or .RDAP.Result "—"}}</span></td>
+    <td><span class="st st-{{.RDAP.Result}}">{{or .RDAP.Result "—"}}</span>{{if and .RDAPSource (ne .RDAPSource "rdap")}}<div class="small muted" title="registration data source">{{.RDAPSource}}</div>{{end}}</td>
     <td class="num">{{.RuleCount}}{{if .TXTMissing}}<div class="small st-missing" title="rules missing _psl TXT">txt-{{.TXTMissing}}</div>{{end}}</td>
     <td class="nowrap small">{{ago .DNSCheckedAt}}</td>
     <td class="small">{{if not (isZero .AckedAt)}}{{.AckedBy}}{{if .AckedAt.Before .FlaggedSince}} <span class="st-missing">(stale)</span>{{end}}{{end}}</td>
@@ -79,3 +79,5 @@
 </table>
 {{else}}<p class="muted">No runs yet.</p>{{end}}
 {{end}}
+
+{{define "srctag"}}{{if eq . "rdap"}}<span class="tag">RDAP</span>{{else if eq . "whois"}}<span class="tag">WHOIS fallback</span>{{else if eq . "rdap+whois"}}<span class="tag">RDAP</span> + <span class="tag">WHOIS (expiry/creation)</span>{{else}}<span class="muted">—</span>{{end}}{{end}}

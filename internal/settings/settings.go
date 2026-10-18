@@ -12,6 +12,7 @@ import (
 	"psl-monitor/internal/compliance"
 	"psl-monitor/internal/dnscheck"
 	"psl-monitor/internal/store"
+	"psl-monitor/internal/whoisfb"
 )
 
 // Def is one editable setting.
@@ -39,6 +40,11 @@ var Defs = []Def{
 	{Key: "rdap_host_conc", Label: "RDAP per-server concurrency", Default: "3", Kind: "int", Min: 1, Max: 32},
 	{Key: "rdap_host_qps", Label: "RDAP per-server QPS", Default: "3", Kind: "int", Min: 1, Max: 50},
 	{Key: "rdap_overrides", Label: "RDAP server overrides", Default: "", Kind: "textarea", Help: "One per line: tld=https://rdap.example/ (for ccTLDs missing from the IANA bootstrap)"},
+	{Key: "whois_fallback", Label: "WHOIS fallback", Default: "1", Kind: "bool", Help: "Use the WHOIS / web-WHOIS service (WHOIS_FALLBACK_URL) when RDAP is unavailable, fails, or lacks an expiry date"},
+	{Key: "whois_tld_conc", Label: "WHOIS per-TLD concurrency", Default: "2", Kind: "int", Min: 1, Max: 16, Help: "WHOIS servers rate-limit and ban aggressively; keep this low"},
+	{Key: "whois_tld_qps", Label: "WHOIS per-TLD requests/minute", Default: "30", Kind: "int", Min: 1, Max: 600},
+	{Key: "whois_max_conc", Label: "WHOIS total concurrency", Default: "16", Kind: "int", Min: 1, Max: 128},
+	{Key: "whois_timeout_s", Label: "WHOIS request timeout (s)", Default: "40", Kind: "int", Min: 5, Max: 120, Help: "Upstream uses 10 s per WHOIS hop; web-based lookups can take several hops"},
 	{Key: "auto_rdap", Label: "Auto RDAP-confirm DNS anomalies", Default: "1", Kind: "bool"},
 	{Key: "rdap_max_age_days", Label: "RDAP cache max age for anomalies (days)", Default: "3", Kind: "int", Min: 1, Max: 365},
 	{Key: "parking_ns", Label: "Parking nameservers", Default: analyze.DefaultParkingNS, Kind: "textarea", Help: "Exact NS hosts; their parent domains also match unless generic"},
@@ -120,6 +126,21 @@ func CheckerConfig(st *store.Store) checker.Config {
 		RDAPMaxAge:    time.Duration(Int(st, "rdap_max_age_days")) * 24 * time.Hour,
 		AutoRDAP:      Get(st, "auto_rdap") == "1",
 	}
+}
+
+// WhoisClient builds the WHOIS fallback client (nil when disabled or unconfigured).
+func WhoisClient(st *store.Store, baseURL, password string) *whoisfb.Client {
+	if Get(st, "whois_fallback") != "1" {
+		return nil
+	}
+	return whoisfb.New(whoisfb.Options{
+		BaseURL:    baseURL,
+		Password:   password,
+		Timeout:    time.Duration(Int(st, "whois_timeout_s")) * time.Second,
+		PerTLDConc: Int(st, "whois_tld_conc"),
+		PerTLDQPS:  float64(Int(st, "whois_tld_qps")) / 60,
+		MaxConc:    Int(st, "whois_max_conc"),
+	})
 }
 
 // DNSPool builds a resolver pool from settings.

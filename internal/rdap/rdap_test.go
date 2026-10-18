@@ -105,3 +105,23 @@ func TestThrottleAdapts(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 }
+
+func TestExtraServers(t *testing.T) {
+	c := New(Options{Overrides: map[string]string{"xx": "https://override.example"}})
+	n, err := c.LoadExtra([]byte(`{"ch":"https://rdap.nic.ch/","br.com":"https://rdap.centralnic.com/br.com","com":"https://bad.example/","sn":"http://insecure.example/","xx":"https://extra.example/"}`))
+	if err != nil || n != 4 {
+		t.Fatalf("%d %v", n, err)
+	}
+	cases := map[string]string{
+		"cloudns.ch":   "https://rdap.nic.ch/",                // not in IANA: extra fills the gap
+		"foo.br.com":   "https://rdap.centralnic.com/br.com/", // deeper suffix wins
+		"a2hosted.com": "https://rdap.verisign.com/com/v1/",   // IANA wins over extra for a TLD
+		"x.xx":         "https://override.example/",           // manual override wins
+		"x.nosuchtld":  "",
+	}
+	for d, want := range cases {
+		if got := c.ServerFor(d); got != want {
+			t.Errorf("%s: %q want %q", d, got, want)
+		}
+	}
+}

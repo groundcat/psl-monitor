@@ -1,0 +1,4 @@
+[submodule "third_party/whois-domain-lookup"]
+	path = third_party/whois-domain-lookup
+	url = https://github.com/reg233/whois-domain-lookup.git
+	branch = main

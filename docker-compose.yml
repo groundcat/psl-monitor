@@ -8,10 +8,15 @@ services:
     environment:
       DB_PATH: /data/pslmon.db
       LISTEN_ADDR: ":8080"
+      WHOIS_FALLBACK_URL: ${WHOIS_FALLBACK_URL-http://whois}
     ports:
       - "${HOST_PORT:-8080}:8080"
     volumes:
       - pslmon-data:/data
+    depends_on:
+      whois:
+        condition: service_healthy
+        required: false
     # DNS checks use public resolvers directly (UDP/TCP 53); RDAP uses HTTPS.
     stop_grace_period: 30s
     ulimits:
@@ -23,6 +28,29 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # WHOIS / web-WHOIS fallback for TLDs without (working) RDAP.
+  # Built from the git submodule third_party/whois-domain-lookup
+  # (https://github.com/reg233/whois-domain-lookup). Not published on the host:
+  # only reachable from the pslmon container.
+  whois:
+    build:
+      context: ./docker/whois
+      additional_contexts:
+        upstream: ./third_party/whois-domain-lookup
+    image: psl-monitor-whois:latest
+    container_name: psl-monitor-whois
+    restart: unless-stopped
+    environment:
+      SITE_PASSWORD: ${WHOIS_FALLBACK_PASSWORD:-}
+      USER_AGENT: ${WHOIS_USER_AGENT:-}
+    expose:
+      - "80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   pslmon-data:

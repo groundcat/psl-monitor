@@ -518,6 +518,9 @@ type workersData struct {
 	RDAPTLDs  int
 	LastRuns  map[string]store.Run
 	Kinds     []string
+
+	WhoisURL, WhoisErr, WhoisVersion string
+	WhoisReq, WhoisFail              int64
 }
 
 func (s *Server) workersData() workersData {
@@ -530,6 +533,17 @@ func (s *Server) workersData() workersData {
 		if r, ok := s.St.LastRun(k); ok {
 			d.LastRuns[k] = r
 		}
+	}
+	if w := s.Ck.WHOIS(); w != nil {
+		d.WhoisURL = w.BaseURL()
+		d.WhoisReq, d.WhoisFail = w.Stats()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := w.Ping(ctx); err != nil {
+			d.WhoisErr = err.Error()
+		} else {
+			d.WhoisVersion = w.Version(ctx)
+		}
+		cancel()
 	}
 	return d
 }
@@ -606,7 +620,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		pw = "(set)"
 	}
 	d.SMTP = map[string]string{"SMTP_HOST": sm.Host, "SMTP_PORT": fmt.Sprint(sm.Port), "SMTP_USERNAME": sm.Username, "SMTP_PASSWORD": pw, "SMTP_FROM": sm.From, "SMTP_TLS": sm.TLSMode}
-	d.Env = map[string]string{"DB_PATH": s.Env.DBPath, "BASE_URL": s.Env.BaseURL, "LISTEN_ADDR": s.Env.Listen, "SECURE_COOKIES": fmt.Sprint(s.Env.SecureCookies), "TRUST_PROXY": fmt.Sprint(s.Env.TrustProxy)}
+	d.Env = map[string]string{"WHOIS_FALLBACK_URL": s.Env.WhoisURL, "WHOIS_FALLBACK_PASSWORD": map[bool]string{true: "(set)", false: ""}[s.Env.WhoisPassword != ""], "DB_PATH": s.Env.DBPath, "BASE_URL": s.Env.BaseURL, "LISTEN_ADDR": s.Env.Listen, "SECURE_COOKIES": fmt.Sprint(s.Env.SecureCookies), "TRUST_PROXY": fmt.Sprint(s.Env.TrustProxy)}
 	s.render(w, r, "settings", page{Title: "Settings", Nav: "settings", Data: d})
 }
 

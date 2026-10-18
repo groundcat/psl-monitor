@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS targets (
 
 	rdap_result TEXT NOT NULL DEFAULT '',
 	rdap_server TEXT NOT NULL DEFAULT '',
+	rdap_source TEXT NOT NULL DEFAULT '',
 	rdap_created INTEGER NOT NULL DEFAULT 0,
 	rdap_expires INTEGER NOT NULL DEFAULT 0,
 	rdap_prev_created INTEGER NOT NULL DEFAULT 0,
@@ -208,11 +209,35 @@ func Open(path string) (*Store, error) {
 	if _, err := w.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := s.migrate(); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	w.Exec(`DELETE FROM events WHERE type='dns_state' AND from_val='unknown'`)
 	w.Exec(`DELETE FROM events WHERE type IN ('rdap_created_changed','rdap_expiry_changed') AND from_val=to_val`)
 	// data fix: creation dates differing only in sub-day precision are not re-registrations
 	w.Exec(`UPDATE targets SET rdap_prev_created=0 WHERE rdap_prev_created>0 AND date(rdap_prev_created,'unixepoch')=date(rdap_created,'unixepoch')`)
 	return s, nil
+}
+
+// migrate adds columns introduced after the initial schema to existing databases.
+func (s *Store) migrate() error {
+	add := []struct{ table, col, def string }{
+		{"targets", "rdap_source", "TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, a := range add {
+		var n int
+		if err := s.W.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, a.table, a.col).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := s.W.Exec(`ALTER TABLE ` + a.table + ` ADD COLUMN ` + a.col + ` ` + a.def); err != nil {
+				return err
+			}
+		}
+	}
+	// rows cached before the WHOIS fallback existed came from RDAP
+	_, err := s.W.Exec(`UPDATE targets SET rdap_source='rdap' WHERE rdap_source='' AND rdap_result IN ('found','not_found')`)
+	return err
 }
 
 // Close closes both pools.

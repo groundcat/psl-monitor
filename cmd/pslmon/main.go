@@ -71,10 +71,42 @@ func main() {
 		if b := st.GetSetting("rdap_bootstrap", ""); b != "" {
 			c.LoadBootstrap([]byte(b))
 		}
+		if b := st.GetSetting("rdap_extra", ""); b != "" {
+			c.LoadExtra([]byte(b))
+		}
 		return c
 	}
 	park := analyze.NewParking(settings.Get(st, "parking_ns"), settings.Lines(settings.Get(st, "parking_keywords")))
 	ck := checker.New(st, pool, newRDAP(), park, exc, settings.CheckerConfig(st), log)
+	applyWhois := func() {
+		w := settings.WhoisClient(st, env.WhoisURL, env.WhoisPassword)
+		ck.SetWHOIS(w)
+		if w == nil {
+			if env.WhoisURL == "" {
+				log.Info("whois fallback disabled (WHOIS_FALLBACK_URL not set)")
+			} else {
+				log.Info("whois fallback disabled in settings")
+			}
+			return
+		}
+		go func() {
+			c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := w.Ping(c); err != nil {
+				log.Warn("whois fallback service not reachable", "url", w.BaseURL(), "err", err)
+				return
+			}
+			log.Info("whois fallback enabled", "url", w.BaseURL(), "upstream", w.Version(c))
+			// community RDAP servers missing from IANA (e.g. .ch, .de, .co)
+			if b, err := w.ExtraRDAPServers(c); err != nil {
+				log.Warn("could not load extra RDAP servers from whois service", "err", err)
+			} else if n, err := ck.RDAP().LoadExtra(b); err == nil {
+				st.SetSetting("rdap_extra", string(b))
+				log.Info("loaded extra RDAP servers from whois-domain-lookup", "count", n)
+			}
+		}()
+	}
+	applyWhois()
 	sch := scheduler.New(st, ck, env.SMTP, env.BaseURL, log)
 
 	refreshBootstrap := func(ctx context.Context) (int, error) {
@@ -106,6 +138,7 @@ func main() {
 		}
 		ck.SetDNS(p)
 		ck.SetRDAP(newRDAP())
+		applyWhois()
 		park.Load(settings.Get(st, "parking_ns"), settings.Lines(settings.Get(st, "parking_keywords")))
 		ck.SetConfig(settings.CheckerConfig(st))
 		sch.Wake()

@@ -35,6 +35,7 @@ type Target struct {
 
 	RDAP          analyze.RDAPInfo
 	RDAPServer    string
+	RDAPSource    string // rdap | whois | rdap+whois
 	RDAPChanged   time.Time
 	RDAPRegistrar string
 	RDAPNS        []string
@@ -54,7 +55,7 @@ type Target struct {
 
 const targetCols = `id,section,name,uname,suffix,tld,entity,rule_count,active,first_seen,removed_at,
 dns_state,dns_status,ns_baseline,ns_baseline_at,ns_previous,ns_current,ns_last_ok_at,missing_days,missing_since,changed_days,changed_since,neg_days,last_day,inconsistent,dns_detail,dns_checked_at,parked_ns,
-rdap_result,rdap_server,rdap_created,rdap_expires,rdap_prev_created,rdap_last_changed,rdap_statuses,rdap_registrar,rdap_ns,rdap_ever_found,rdap_error,rdap_checked_at,
+rdap_result,rdap_server,rdap_source,rdap_created,rdap_expires,rdap_prev_created,rdap_last_changed,rdap_statuses,rdap_registrar,rdap_ns,rdap_ever_found,rdap_error,rdap_checked_at,
 txt_checked,txt_missing,flags,flag_types,severity,flagged_since,acked_at,acked_by,note`
 
 func scanTarget(sc interface{ Scan(...any) error }) (*Target, error) {
@@ -65,7 +66,7 @@ func scanTarget(sc interface{ Scan(...any) error }) (*Target, error) {
 	var bl, prev, cur, parked, rStatuses, rNS, flags string
 	err := sc.Scan(&t.ID, &t.Section, &t.Name, &t.UName, &t.Suffix, &t.TLD, &t.Entity, &t.RuleCount, &active, &firstSeen, &removedAt,
 		&t.DNS.State, &t.DNS.LastStatus, &bl, &blAt, &prev, &cur, &lastOK, &t.DNS.MissingDays, &missSince, &t.DNS.ChangedDays, &chSince, &t.DNS.NegDays, &t.DNS.LastDay, &incons, &t.DNSDetail, &dnsChecked, &parked,
-		&t.RDAP.Result, &t.RDAPServer, &rCreated, &rExpires, &rPrev, &rChanged, &rStatuses, &t.RDAPRegistrar, &rNS, &ever, &t.RDAPError, &rChecked,
+		&t.RDAP.Result, &t.RDAPServer, &t.RDAPSource, &rCreated, &rExpires, &rPrev, &rChanged, &rStatuses, &t.RDAPRegistrar, &rNS, &ever, &t.RDAPError, &rChecked,
 		&t.TXTChecked, &t.TXTMissing, &flags, &t.FlagTypes, &t.Severity, &flaggedSince, &ackedAt, &t.AckedBy, &t.Note)
 	if err != nil {
 		return nil, err
@@ -125,8 +126,8 @@ func SaveDNSTx(tx *sql.Tx, t *Target) error {
 
 // SaveRDAPTx persists RDAP cache for a target.
 func SaveRDAPTx(tx *sql.Tx, t *Target) error {
-	_, err := tx.Exec(`UPDATE targets SET rdap_result=?,rdap_server=?,rdap_created=?,rdap_expires=?,rdap_prev_created=?,rdap_last_changed=?,rdap_statuses=?,rdap_registrar=?,rdap_ns=?,rdap_ever_found=?,rdap_error=?,rdap_checked_at=? WHERE id=?`,
-		t.RDAP.Result, t.RDAPServer, Unix(t.RDAP.Created), Unix(t.RDAP.Expires), Unix(t.RDAP.PrevCreated), Unix(t.RDAPChanged), JoinList(t.RDAP.Statuses), t.RDAPRegistrar, JoinList(t.RDAPNS), b2i(t.RDAP.EverFound), t.RDAPError, Unix(t.RDAP.CheckedAt), t.ID)
+	_, err := tx.Exec(`UPDATE targets SET rdap_result=?,rdap_server=?,rdap_source=?,rdap_created=?,rdap_expires=?,rdap_prev_created=?,rdap_last_changed=?,rdap_statuses=?,rdap_registrar=?,rdap_ns=?,rdap_ever_found=?,rdap_error=?,rdap_checked_at=? WHERE id=?`,
+		t.RDAP.Result, t.RDAPServer, t.RDAPSource, Unix(t.RDAP.Created), Unix(t.RDAP.Expires), Unix(t.RDAP.PrevCreated), Unix(t.RDAPChanged), JoinList(t.RDAP.Statuses), t.RDAPRegistrar, JoinList(t.RDAPNS), b2i(t.RDAP.EverFound), t.RDAPError, Unix(t.RDAP.CheckedAt), t.ID)
 	return err
 }
 
@@ -586,6 +587,7 @@ type TargetFilter struct {
 	DNSState      string
 	DNSStatus     string
 	RDAP          string // found/not_found/unsupported/error/unchecked
+	RegSource     string // rdap / whois / rdap+whois
 	Flag          string // flag type
 	MinSev        int
 	OnlyFlagged   bool
@@ -608,7 +610,7 @@ type TargetFilter struct {
 func FilterFromQuery(get func(string) string) TargetFilter {
 	f := TargetFilter{
 		Q: strings.TrimSpace(get("q")), Section: get("section"), TLD: strings.ToLower(get("tld")), Suffix: strings.ToLower(get("suffix")),
-		Entity: get("entity"), DNSState: get("dns"), DNSStatus: get("dnsstatus"), RDAP: get("rdap"), Flag: get("flag"),
+		Entity: get("entity"), RegSource: get("regsrc"), DNSState: get("dns"), DNSStatus: get("dnsstatus"), RDAP: get("rdap"), Flag: get("flag"),
 		TXT: get("txt"), NS: strings.ToLower(strings.TrimSpace(get("ns"))), Sort: get("sort"), Desc: get("desc") == "1",
 		OnlyFlagged: get("flagged") == "1", Unacked: get("unacked") == "1", Parked: get("parked") == "1", Inactive: get("inactive") == "1",
 	}
@@ -666,6 +668,7 @@ func (f TargetFilter) where() (string, []any) {
 	eq("entity", f.Entity)
 	eq("dns_state", f.DNSState)
 	eq("dns_status", f.DNSStatus)
+	eq("rdap_source", f.RegSource)
 	if f.RDAP == "unchecked" {
 		w = append(w, "rdap_result=''")
 	} else {
@@ -809,7 +812,7 @@ func (s *Store) Counts() Counts {
 
 // Distinct values for filter dropdowns.
 func (s *Store) Distinct(col, section string) []string {
-	allowed := map[string]bool{"tld": true, "entity": true, "dns_state": true, "rdap_result": true, "dns_status": true}
+	allowed := map[string]bool{"tld": true, "entity": true, "dns_state": true, "rdap_result": true, "dns_status": true, "rdap_source": true}
 	if !allowed[col] {
 		return nil
 	}

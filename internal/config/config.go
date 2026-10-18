@@ -22,6 +22,9 @@ type Env struct {
 	AdminEmail    string
 	SMTP          mailer.Config
 	LogLevel      string
+	// WHOIS fallback service (reg233/whois-domain-lookup sidecar).
+	WhoisURL      string
+	WhoisPassword string
 }
 
 func get(k, def string) string {
@@ -56,6 +59,8 @@ func Load() Env {
 		AdminPassword: get("ADMIN_PASSWORD", ""),
 		AdminEmail:    get("ADMIN_EMAIL", ""),
 		LogLevel:      get("LOG_LEVEL", "info"),
+		WhoisURL:      get("WHOIS_FALLBACK_URL", ""),
+		WhoisPassword: get("WHOIS_FALLBACK_PASSWORD", ""),
 		SMTP: mailer.Config{
 			Host:               get("SMTP_HOST", ""),
 			Port:               port,

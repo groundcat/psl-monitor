@@ -55,6 +55,14 @@
   {{end}}
 </table>
 
+<h2>WHOIS fallback</h2>
+<table class="kv">
+  <tr><th>status</th><td>{{if $d.WhoisURL}}<span class="st st-ok">enabled</span> → {{$d.WhoisURL}}{{else}}<span class="muted">disabled</span> (set WHOIS_FALLBACK_URL in .env and enable it in Settings){{end}}</td></tr>
+  {{if $d.WhoisURL}}<tr><th>service</th><td>{{if $d.WhoisErr}}<span class="st st-error">unreachable: {{$d.WhoisErr}}</span>{{else}}<span class="st st-ok">reachable</span>{{end}}{{if $d.WhoisVersion}} · upstream {{$d.WhoisVersion}}{{end}}</td></tr>
+  <tr><th>requests / failures</th><td>{{$d.WhoisReq}} / {{$d.WhoisFail}} <span class="muted small">(since process start)</span></td></tr>{{end}}
+  <tr><th>used when</th><td class="small">no RDAP server for the TLD, RDAP failed, or RDAP returned no expiry date. RDAP <i>not found</i> is authoritative and is not re-checked via WHOIS.</td></tr>
+</table>
+
 <h2>RDAP servers <span class="muted small">(top 50 by requests since process start; {{$d.RDAPTLDs}} TLDs have a known server)</span></h2>
 <table class="compact">
   <tr><th>host</th><th class="num">requests</th><th class="num">failures</th><th class="num">throttled</th><th>circuit</th></tr>

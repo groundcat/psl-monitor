@@ -15,6 +15,7 @@
   <label>TLD <select name="tld"><option value="">any</option>{{range $d.TLDs}}<option {{if eq $f.TLD .}}selected{{end}}>{{.}}</option>{{end}}</select></label>
   <label>parent suffix <input type="text" name="suffix" value="{{$f.Suffix}}" placeholder="e.g. edu.pl" size="12"></label>
   <label>entity (exact) <input type="text" name="entity" value="{{$f.Entity}}" size="16"></label>
+  <label>registration source <select name="regsrc"><option value="">any</option>{{range (split ",rdap,whois,rdap+whois,")}}{{if .}}<option {{if eq $f.RegSource .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
   <label>NS contains <input type="text" name="ns" value="{{$f.NS}}" placeholder="e.g. cloudflare" size="14"></label>
   <label>last dns status <select name="dnsstatus"><option value="">any</option>{{range (split ",ok,nxdomain,nodata,servfail,timeout,error,")}}{{if .}}<option {{if eq $f.DNSStatus .}}selected{{end}}>{{.}}</option>{{end}}{{end}}</select></label>
   <label>_psl TXT <select name="txt"><option value="">any</option><option value="missing" {{if eq $f.TXT "missing"}}selected{{end}}>has non-compliant rules</option><option value="ok" {{if eq $f.TXT "ok"}}selected{{end}}>compliant/exempt</option></select></label>

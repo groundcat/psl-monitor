@@ -4,3 +4,5 @@ data/
 *.db
 *.db-*
 /pslmon
+third_party/
+docker/

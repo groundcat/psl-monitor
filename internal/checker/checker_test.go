@@ -57,3 +57,15 @@ func TestNewFlags(t *testing.T) {
 		t.Fatal("newFlags")
 	}
 }
+
+func TestApplyRDAPSource(t *testing.T) {
+	tg := &store.Target{}
+	applyRDAP(tg, &rdap.Domain{Result: rdap.ResultFound, Source: "whois", Server: "whois://whois.nic.it", Expires: time.Now().AddDate(1, 0, 0)})
+	if tg.RDAPSource != "whois" || tg.RDAPServer != "whois://whois.nic.it" {
+		t.Fatalf("%+v", tg)
+	}
+	applyRDAP(tg, &rdap.Domain{Result: rdap.ResultUnsupported, Err: "no RDAP or WHOIS server for TLD"})
+	if tg.RDAP.Result != rdap.ResultFound || tg.RDAPError != "no RDAP or WHOIS server for TLD" {
+		t.Fatalf("unsupported must not clobber cached result: %+v", tg.RDAP)
+	}
+}

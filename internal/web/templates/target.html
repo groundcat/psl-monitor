@@ -61,9 +61,10 @@
 </table>
 </div>
 <div>
-<h2>RDAP (cached)</h2>
+<h2>Registration data (RDAP / WHOIS, cached)</h2>
 <table class="kv">
   <tr><th>result</th><td><span class="st st-{{$t.RDAP.Result}}">{{or $t.RDAP.Result "never checked"}}</span>{{if $t.RDAPError}} <span class="small st-error">{{$t.RDAPError}}</span>{{end}}</td></tr>
+  <tr><th>source</th><td>{{template "srctag" $t.RDAPSource}}</td></tr>
   <tr><th>server</th><td class="wrap">{{or $t.RDAPServer "—"}}</td></tr>
   <tr><th>checked</th><td>{{datetime $t.RDAP.CheckedAt}} ({{ago $t.RDAP.CheckedAt}})</td></tr>
   <tr><th>created</th><td>{{date $t.RDAP.Created}}{{if not (isZero $t.RDAP.PrevCreated)}} <span class="st-missing">(previously {{date $t.RDAP.PrevCreated}})</span>{{end}}</td></tr>
@@ -71,7 +72,7 @@
   <tr><th>last changed</th><td>{{date $t.RDAPChanged}}</td></tr>
   <tr><th>status</th><td>{{range $t.RDAP.Statuses}}<span class="tag">{{.}}</span>{{else}}—{{end}}</td></tr>
   <tr><th>registrar</th><td>{{or $t.RDAPRegistrar "—"}}</td></tr>
-  <tr><th>RDAP nameservers</th><td class="wrap">{{join $t.RDAPNS ", "}}</td></tr>
+  <tr><th>registry nameservers</th><td class="wrap">{{join $t.RDAPNS ", "}}</td></tr>
   <tr><th>ever found</th><td>{{$t.RDAP.EverFound}}</td></tr>
 </table>
 <h2>Meta</h2>

@@ -39,6 +39,7 @@ const (
 // Domain is the parsed subset of an RDAP domain object.
 type Domain struct {
 	Result      string
+	Source      string // "rdap", "whois" or "rdap+whois" (set by callers that merge a fallback)
 	Server      string
 	Created     time.Time
 	Expires     time.Time
@@ -77,6 +78,7 @@ type Client struct {
 	http        *http.Client
 	mu          sync.RWMutex
 	servers     map[string]string // tld -> base URL (with trailing slash)
+	extra       map[string]string // suffix -> base URL from community lists (whois-domain-lookup)
 	overrides   map[string]string
 	hosts       sync.Map // host -> *hostState
 	perHostConc int
@@ -183,6 +185,34 @@ func (c *Client) RefreshBootstrap(ctx context.Context) (int, error) {
 	return c.TLDCount(), nil
 }
 
+// LoadExtra loads a community-maintained {"suffix": "https://rdap.example/"}
+// map (e.g. whois-domain-lookup's rdap-servers-extra.json) for registries
+// missing from the IANA bootstrap. Keys may be TLDs or deeper suffixes
+// ("br.com"); the longest matching suffix wins. IANA entries take precedence
+// for TLDs; manual overrides take precedence over everything.
+func (c *Client) LoadExtra(b []byte) (int, error) {
+	var raw map[string]string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return 0, err
+	}
+	m := map[string]string{}
+	for k, v := range raw {
+		k = strings.ToLower(strings.Trim(strings.TrimSpace(k), "."))
+		v = strings.TrimSpace(v)
+		if k == "" || !strings.HasPrefix(v, "https://") {
+			continue
+		}
+		if !strings.HasSuffix(v, "/") {
+			v += "/"
+		}
+		m[k] = v
+	}
+	c.mu.Lock()
+	c.extra = m
+	c.mu.Unlock()
+	return len(m), nil
+}
+
 // SetOverrides replaces manual TLD -> server mappings.
 func (c *Client) SetOverrides(o map[string]string) {
 	m := map[string]string{}
@@ -210,9 +240,11 @@ func (c *Client) TLDCount() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	n := len(c.servers)
-	for k := range c.overrides {
-		if _, ok := c.servers[k]; !ok {
-			n++
+	for _, m := range []map[string]string{c.overrides, c.extra} {
+		for k := range m {
+			if _, ok := c.servers[k]; !ok && !strings.Contains(k, ".") {
+				n++
+			}
 		}
 	}
 	return n
@@ -227,8 +259,20 @@ func (c *Client) ServerFor(domain string) string {
 	tld := domain[strings.LastIndexByte(domain, '.')+1:]
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if s, ok := c.overrides[tld]; ok {
-		return s
+	// longest suffix match on overrides, then extra (deeper suffixes such as
+	// "br.com" are operated by different registries than the TLD)
+	labels := strings.Split(domain, ".")
+	for i := 1; i < len(labels); i++ {
+		if s, ok := c.overrides[strings.Join(labels[i:], ".")]; ok {
+			return s
+		}
+	}
+	for i := 1; i < len(labels); i++ {
+		suf := strings.Join(labels[i:], ".")
+		// extra never shadows an IANA-listed TLD server
+		if s, ok := c.extra[suf]; ok && (strings.Contains(suf, ".") || c.servers[suf] == "") {
+			return s
+		}
 	}
 	return c.servers[tld]
 }
@@ -277,7 +321,7 @@ var errCircuitOpen = errors.New("circuit open: server repeatedly failing")
 // Lookup queries RDAP for a domain. It never blocks longer than ctx allows.
 func (c *Client) Lookup(ctx context.Context, domain string) *Domain {
 	start := time.Now()
-	d := &Domain{}
+	d := &Domain{Source: "rdap"}
 	base := c.ServerFor(domain)
 	if base == "" {
 		d.Result = ResultUnsupported
